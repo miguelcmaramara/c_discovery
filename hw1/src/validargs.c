@@ -23,6 +23,22 @@
  */
 
 int validargs(int argc, char **argv) {
-    // TO BE IMPLEMENTED.
+    // Test args:
+    // 1. Just the command
+    // 2. Just the command and a file name
+
+    // no flags
+    if(argc <= 1)
+        return -1; // Case that argument 
+
+    printf("argc: %d", argc);
+
+
+    // check for -h flag
+    
+
+    // Check for file name 
+
+
     abort();
 }

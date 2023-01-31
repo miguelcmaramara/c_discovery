@@ -19,6 +19,17 @@
 
 int main(int argc, char **argv)
 {
+    printf("argc: %d\n", argc);
+
+    char** words = argv;
+    for(int i = 0; i < argc; i++){
+        char* word = words[i];
+        while(*word != 0)
+            printf("%c,", *(word++));
+        printf("\n");
+    }
+        
+
     if(validargs(argc, argv))
         USAGE(*argv, EXIT_FAILURE);
     if(global_options == HELP_OPTION)
