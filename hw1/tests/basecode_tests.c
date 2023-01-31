@@ -6,6 +6,66 @@
 
 static char *progname = "bin/fliki";
 
+Test(basecode_suite, validargs_blank_test) {
+    char *argv[] = {progname, NULL};
+    int argc = (sizeof(argv) / sizeof(char *)) - 1;
+    int ret = validargs(argc, argv);
+    int exp_ret = 0;
+    int opt = global_options;
+    int flag = 0;
+    cr_assert_eq(ret, exp_ret, "Invalid return for validargs.  Got: %d | Expected: %d",
+		 ret, exp_ret);
+    cr_assert_eq(opt & flag, flag, "Correct bit (0x%x) not set for -h. Got: %x",
+		 flag, opt);
+}
+
+Test(basecode_suite, validargs_bad_flag_test) {
+    char *argv[] = {progname, "-g", NULL};
+    int argc = (sizeof(argv) / sizeof(char *)) - 1;
+    int ret = validargs(argc, argv);
+    int exp_ret = -1;
+    int opt = global_options;
+    int flag = 0;
+    cr_assert_eq(ret, exp_ret, "Invalid return for validargs.  Got: %d | Expected: %d",
+		 ret, exp_ret);
+    cr_assert_eq(opt & flag, flag, "Correct bit (0x%x) not set for -g. Got: %x",
+		 flag, opt);
+}
+
+Test(basecode_suite, validargs_bad_order_test) {
+    char *argv[] = {progname, "-n", "-h", "mydiffs", NULL};
+    int argc = (sizeof(argv) / sizeof(char *)) - 1;
+    cr_assert_eq(
+            validargs(argc, argv), -1 ,
+            "Invalid return for validargs.  Got: %d | Expected: %d", validargs(argc, argv), -1);
+    cr_assert_eq(
+            global_options, 0,
+            "Invalid options settings.  Got: 0x%x | Expected: 0x%x", global_options, 0);
+}
+
+Test(basecode_suite, validargs_valid_test) {
+    char *argv[] = {progname, "-n", "-q", "mydiffs", NULL};
+    int argc = (sizeof(argv) / sizeof(char *)) - 1;
+    cr_assert_eq(
+            validargs(argc, argv), 0 ,
+            "Invalid return for validargs.  Got: %d | Expected: %d", validargs(argc, argv), -1);
+    cr_assert_eq(
+            global_options, 0x6,
+            "Invalid options settings.  Got: 0x%x | Expected: 0x%x", global_options, 0x6);
+    cr_assert_eq(diff_filename, argv[3], "Variable 'diff_filename' was not correctly set");
+}
+
+Test(basecode_suite, validargs_duplicate_flags_test) {
+    char *argv[] = {progname, "-n", "-n", "-q",  "mydiffs", NULL};
+    int argc = (sizeof(argv) / sizeof(char *)) - 1;
+    cr_assert_eq(
+            validargs(argc, argv), 0 ,
+            "Invalid return for validargs.  Got: %d | Expected: %d", validargs(argc, argv), 0);
+    cr_assert_eq(
+            global_options, 0x6,
+            "Invalid options settings.  Got: 0x%x | Expected: 0x%x", global_options, 0x6);
+}
+
 Test(basecode_suite, validargs_help_test) {
     char *argv[] = {progname, "-h", NULL};
     int argc = (sizeof(argv) / sizeof(char *)) - 1;
@@ -53,6 +113,9 @@ Test(basecode_suite, validargs_error_test) {
     int ret = validargs(argc, argv);
     cr_assert_eq(ret, exp_ret, "Invalid return for validargs.  Got: %d | Expected: %d",
 		 ret, exp_ret);
+    cr_assert_eq(
+            global_options, 0x0,
+            "Invalid options settings.  Got: 0x%x | Expected: 0x%x", global_options, 0x0);
 }
 
 Test(basecode_suite, help_system_test) {

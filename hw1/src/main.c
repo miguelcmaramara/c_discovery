@@ -23,7 +23,7 @@ int main(int argc, char **argv)
 
     char** words = argv;
     for(int i = 0; i < argc; i++){
-        char* word = words[i];
+        char* word = *(words++);
         while(*word != 0)
             printf("%c,", *(word++));
         printf("\n");
