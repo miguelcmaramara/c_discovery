@@ -5,6 +5,131 @@
 #include "global.h"
 #include "debug.h"
 
+#include <stdbool.h>
+static int counter = 1;
+
+/*
+ * advanceUntil will iterate through stream until character in range (inclusive)
+ * is found
+ *
+ * @param in Input stream that will be advanced until reached
+ * @param begRange beginning range to advance until
+ * @param endRange end of range to advance until
+ * @return character stopped at if successful, -1 if EOF file reached
+ */
+static int advanceUntil(FILE *in, char begRange, char endRange){
+    // TODO: test EOF
+    printf("Advancing: \n");
+    char curr;
+    do{
+        curr = fgetc(in);
+        printf("%c", curr);
+    } while((curr < begRange || curr > endRange) && curr > 0);
+
+    return curr;
+}
+
+/*
+ * Function shifts over decimal 10 and ads probided char
+ *
+ * @param prev is the number to be decimal bit shifted
+ * @return 0 if unsuccessful, the decimal shifted number when successful
+ */
+static int deciShiftLeft(int prev, char next){
+    if(next < '0' || next > '9')
+        return 0;
+    prev *= 10;
+    return prev + next - 48;
+}
+
+/*
+ * Advances file and modifies integer provided until a non-number is provided.
+ * Then returns the next non-digit character
+ */
+static char parseInt(FILE *in, int * intToChange){
+    // TODO: test EOF
+    char curr = fgetc(in);
+
+    printf("Parsed Int- Before: %d", *intToChange);
+
+    while(curr >= '0' &&  curr <= '9'){
+        *intToChange = deciShiftLeft(*intToChange, curr);
+        curr = fgetc(in);
+    }
+    printf(" After: %d", *intToChange);
+    printf(" Stopper: %c\n", curr);
+
+    return curr;
+}
+
+/*
+ * Assumes that header begins at char pointed at and modifies the HUNK
+ * Allows for input of the first integer for peeking. input 0 if not utilized
+ *
+ * returns 1 if successful
+ * returns 0 if unsuccessful by bad format
+ * returns -1 if unsuccessful by EOF
+ */
+static int parseHeader(HUNK *hp, FILE *in, int firstInt){
+    HUNK_TYPE type;
+    int old_start = firstInt;
+    int old_end = 0;
+    int new_start = 0;
+    int new_end = 0;
+    char stopper;
+
+    stopper = parseInt(in, &old_start);
+    if(stopper == ',')
+        stopper = parseInt(in, &old_end);
+    else
+        old_end = old_start;
+
+    switch(stopper) {
+        case 'a':
+            type = HUNK_APPEND_TYPE;
+            break;
+        case 'c':
+            type = HUNK_CHANGE_TYPE;
+            break;
+        case 'd':
+            type = HUNK_DELETE_TYPE;
+            break;
+        case -1: // EOF case
+            return -1;
+        default: //bad format case
+            return 0;
+    }
+    // Parse second set of numbers
+    stopper = parseInt(in, &new_start);
+    if(stopper == ',')
+        stopper = parseInt(in, &new_end);
+    else
+        new_end = new_start;
+
+    if(stopper <= 0) // make sure that stopper was new line
+        return -1;
+    if(stopper != '\n')
+        return 0;
+    
+    hp->type = type;
+    hp->old_start = old_start;
+    hp->old_end = old_end;
+    hp->new_start = new_start;
+    hp->new_end = new_end;
+    return 1;
+}
+
+/*
+ * returns integer of character is a digit
+ * else returns -1
+ */
+static int isDigit(char c){
+    if(c >= '0' && c <= '9')
+        return (int)c - 48;
+    return -1;
+}
+
+
 /**
  * @brief Get the header of the next hunk in a diff file.
  * @details This function advances to the beginning of the next hunk
@@ -21,8 +146,45 @@
  */
 
 int hunk_next(HUNK *hp, FILE *in) {
+
+    int headerParseStatus = 0;
+    bool firstRun = true;
+    char curr;
+    do{
+        curr = fgetc(in);
+        printf("curr: %c\n", curr);
+        if(isDigit(curr) >= 0)
+            headerParseStatus = parseHeader(hp, in, isDigit(curr));
+        else if (curr != '<' && curr != '>' && curr != '-' && !firstRun)
+            return ERR; // malformed hunk
+
+        if(headerParseStatus == 0)
+            if(advanceUntil(in, '\n', '\n') < 0) // advances until next newline
+                return EOS; // return EOF if EOF is reached
+
+        firstRun = false;
+
+    } while(headerParseStatus == 0);
+
+    if(headerParseStatus == -1)
+        return EOS;
+
+    // TODO: check bogus lines numbers like 15,4d5
+    // TODO: get rid of hunk
+    hp->serial = counter++;
+    printf("Hunk Parsed!\n");
+    printf("    serial: %d\n", hp->serial);
+    printf("    old_start: %d\n", hp->old_start);
+    printf("    old_end: %d\n", hp->old_end);
+    printf("    new_start: %d\n", hp->new_start);
+    printf("    new_end: %d\n", hp->new_end);
+    // TODO: test end of file right after header
+    /*
+    if(advanceUntil(in, '\n', '\n') < 0) // advances until next newline
+        return ERR; // if EOF reached before newline, then malformed hunk
+                    // */
     // TO BE IMPLEMENTED
-    abort();
+    return 0;
 }
 
 /**
@@ -60,7 +222,6 @@ int hunk_next(HUNK *hp, FILE *in) {
  */
 
 int hunk_getc(HUNK *hp, FILE *in) {
-    // TO BE IMPLEMENTED
     abort();
 }
 
@@ -150,3 +311,13 @@ int patch(FILE *in, FILE *out, FILE *diff) {
     // TO BE IMPLEMENTED
     abort();
 }
+
+
+
+
+
+
+
+
+
+
