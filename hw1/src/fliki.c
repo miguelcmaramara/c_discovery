@@ -146,13 +146,14 @@ static int isDigit(char c){
  */
 
 int hunk_next(HUNK *hp, FILE *in) {
+    // TODO: test end of file right after header
 
     int headerParseStatus = 0;
     bool firstRun = true;
     char curr;
     do{
         curr = fgetc(in);
-        printf("curr: %c\n", curr);
+        // printf("curr: %c\n", curr);
         if(isDigit(curr) >= 0)
             headerParseStatus = parseHeader(hp, in, isDigit(curr));
         else if (curr != '<' && curr != '>' && curr != '-' && !firstRun)
@@ -172,13 +173,14 @@ int hunk_next(HUNK *hp, FILE *in) {
     // TODO: check bogus lines numbers like 15,4d5
     // TODO: get rid of hunk
     hp->serial = counter++;
+    /*
     printf("Hunk Parsed!\n");
     printf("    serial: %d\n", hp->serial);
     printf("    old_start: %d\n", hp->old_start);
     printf("    old_end: %d\n", hp->old_end);
     printf("    new_start: %d\n", hp->new_start);
     printf("    new_end: %d\n", hp->new_end);
-    // TODO: test end of file right after header
+    */
     /*
     if(advanceUntil(in, '\n', '\n') < 0) // advances until next newline
         return ERR; // if EOF reached before newline, then malformed hunk

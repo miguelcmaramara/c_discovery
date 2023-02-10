@@ -25,7 +25,7 @@
 
 int validargs(int argc, char **argv) {
     if(argc == 1) // Case of no flags
-        return 0;
+        return -1;
     
     char** stringPtr = argv;
     char* charPtr = *stringPtr;
