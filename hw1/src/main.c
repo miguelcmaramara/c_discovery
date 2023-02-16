@@ -43,8 +43,15 @@ int main(int argc, char **argv)
     HUNK hunk;
    
     printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
+    char hgc_tester = 'z';
+    while(hgc_tester > 0)
+        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
     printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
+    while(hgc_tester > 0)
+        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
     printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
+    while(hgc_tester > 0)
+        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
 
     
 
