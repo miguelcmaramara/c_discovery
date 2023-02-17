@@ -17,6 +17,21 @@
 #error "Do not #include <ctype.h>. You will get a ZERO."
 #endif
 
+/*void printBuffers(){
+//TODO: REMOVE
+
+    printf("--------------------buffer\n");
+    char * buffChar = hunk_additions_buffer;
+    for(int i = 0; i < HUNK_MAX; i++)
+        printf("%d ",  *(buffChar++));
+
+    printf("\n--------------------\n");
+    buffChar = hunk_deletions_buffer;
+    for(int i = 0; i < HUNK_MAX; i++)
+        printf("%d ",  *(buffChar++));
+    printf("\n--------------------bufferfin\n");
+}*/
+
 int main(int argc, char **argv)
 {
     /* File
@@ -30,6 +45,7 @@ int main(int argc, char **argv)
         printf("\n");
     }
     */
+
         
 
     if(validargs(argc, argv))
@@ -38,27 +54,70 @@ int main(int argc, char **argv)
         USAGE(*argv, EXIT_SUCCESS);
     // TO BE IMPLEMENTED
 
+   
+
+    FILE * diff;
+    diff = fopen(diff_filename, "r"); // handle file close
+
+    patch(stdin, stdout, diff);
+
+
+    /* working tests:
     FILE * filePtr;
     filePtr = fopen(diff_filename, "r"); // handle file close
     HUNK hunk;
-   
+
+    // first hunk:
     printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
     char hgc_tester = 'z';
-    while(hgc_tester > 0)
+    printf("\n Line 1: ");
+    while(hgc_tester > 0){
         printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
-    printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
-    while(hgc_tester > 0)
-        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
-    printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
-    while(hgc_tester > 0)
-        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
+    }
 
+
+
+    printf("\n Line 2: ");
+    do{
+        printf("%d", hgc_tester = hunk_getc(&hunk, filePtr));
+    }while(hgc_tester > 0);
+
+
+    printf("\n Line 3: ");
+    do{
+        printf("%d", hgc_tester = hunk_getc(&hunk, filePtr));
+    }while(hgc_tester > 0);
+    printf("\n Line 4: ");
+    do{
+        printf("%d", hgc_tester = hunk_getc(&hunk, filePtr));
+    }while(hgc_tester > 0);
+
+
+    printf("hunk_show:\n");
+    hunk_show(&hunk, stdout);
+
+
+    // second hunk:
+    printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
+    do{
+        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
+    }while(hgc_tester > 0);
+    do{
+        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
+    }while(hgc_tester > 0);
+    do{
+        printf("%c", hgc_tester = hunk_getc(&hunk, filePtr));
+    }while(hgc_tester > 0);
+
+    printf("hunk_show:\n");
+    hunk_show(&hunk, stdout);
+   */
     
-
     /*
      * File testing
      */
-    printf("\n\n\n------------------DUMPING THE REST");
+    /*
+    printf("\n------------------DUMPING THE REST");
     FILE * testPtr = filePtr;
     char ch1;
     do{
@@ -83,6 +142,19 @@ int main(int argc, char **argv)
 
     fclose(filePtr);
     return EXIT_FAILURE; 
+    */
+
+
+
+    /* read characters in buffer
+    char * buffChar = hunk_additions_buffer;
+    for(int i = 0; i < HUNK_MAX; i++)
+        printf("a%c",  *(buffChar++));
+
+    buffChar = hunk_deletions_buffer;
+    for(int i = 0; i < HUNK_MAX; i++)
+        printf("d%c",  *(buffChar++));
+        */
 }
 
 /*

@@ -1,3 +1,4 @@
+
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -22,13 +23,16 @@ static int errStatus; // 0 if successful, can be EOF, EOS, ERR
 static int remainingAdds = 0; // num lines to be added remaining
 static int remainingDels = 0; // num lines to be deleted remaining
 static enum FLIKI_FXN_STATE lastUsed = FXN_NONE;
-static enum HUNK_TYPE addDelStatus = HUNK_NO_TYPE; // which buffer to add to
+static HUNK_TYPE addDelStatus = HUNK_NO_TYPE; // which buffer to add to
+static int file_finished = 0; // 2 if finished, 0/1, is not finished
+static int addsTrunc = 0; // num lines to be added remaining
+static int delsTrunc = 0; // num lines to be deleted remaining
 
-// buffer pointer variables
-static char * lastAddPtr;
-static char * lastAddCount;
-static char * lastDelPtr;
-static char * lastDelCount;
+// buffer pointer variables 
+static char * lastAddPtr = hunk_additions_buffer;
+static char * lastAddCount = hunk_additions_buffer;
+static char * lastDelPtr = hunk_deletions_buffer;
+static char * lastDelCount = hunk_deletions_buffer;
 
 /*
  * Adds char c to buffer specified by isAddition
@@ -39,11 +43,15 @@ static char addToBuffer(char c, bool isAddition){
         return c;
     if(isAddition){
         // cannot add to ptr when within 2 of ending
-        if( hunk_additions_buffer + HUNK_MAX - lastAddPtr <= 2)
+        if( hunk_additions_buffer + HUNK_MAX - lastAddPtr <= 2){
+            addsTrunc = 1;
             return -1;
+        }
         // cannot add to counter within 4 of ending
-        if( hunk_additions_buffer + HUNK_MAX - lastAddCount <= 4)
+        if( hunk_additions_buffer + HUNK_MAX - lastAddCount <= 4){
+            addsTrunc = 1;
             return -1;
+        }
 
         // handling newline found
         if(lastAddCount == lastAddPtr)
@@ -53,7 +61,7 @@ static char addToBuffer(char c, bool isAddition){
         if(*lastAddCount == (char)0xFF)
             *(lastAddCount + 1) += 1;
         else
-            lastAddCount++;
+            *(lastAddCount) += 1;
 
         if(c == '\n'){
             *lastAddPtr = c;
@@ -61,15 +69,19 @@ static char addToBuffer(char c, bool isAddition){
         }
         else 
             *(lastAddPtr++) = c;
+        //printf("aadded: %c", *(lastAddPtr - 1));
         return c;
     } else {
         // cannot add to ptr when within 2 of ending
-        if( hunk_deletions_buffer + HUNK_MAX - lastDelPtr <= 2)
+        if( hunk_deletions_buffer + HUNK_MAX - lastDelPtr <= 2){
+            delsTrunc = 1;
             return -1;
+        }
         // cannot add to counter within 4 of ending
-        if( hunk_deletions_buffer + HUNK_MAX - lastDelCount <= 4)
+        if( hunk_deletions_buffer + HUNK_MAX - lastDelCount <= 4){
+            delsTrunc = 1;
             return -1;
-
+        }
         // handling newline found
         if(lastDelCount == lastDelPtr)
             lastDelPtr +=2;
@@ -78,14 +90,15 @@ static char addToBuffer(char c, bool isAddition){
         if(*lastDelCount == (char)0xFF)
             *(lastDelCount + 1) += 1;
         else
-            lastDelCount++;
+            *(lastDelCount) += 1;
 
         if(c == '\n'){
             *lastDelPtr = c;
             lastDelCount = ++lastDelPtr;
-        }
-        else 
+        } else {
             *(lastDelPtr++) = c;
+            //printf("|dadded: %c|", *(lastDelPtr - 1));
+        }
         return c;
     }
 }
@@ -111,7 +124,7 @@ static char fgetcLogged(FILE*in){
  */
 static int advanceUntil(FILE *in, char begRange, char endRange){
     // TODO: test EOF
-    printf("Advancing: \n");
+    //printf("Advancing: \n");
     char curr;
     do{
         curr = fgetcLogged(in);
@@ -133,7 +146,7 @@ static int advanceUntil(FILE *in, char begRange, char endRange){
  */
 static char advanceUntilFound(FILE *in, char * chars, bool shouldMatch){
     // TODO: test EOF
-    printf("Advancing: \n");
+    //printf("Advancing: \n");
     char curr;
     char *charPtr = chars;
     do{
@@ -171,14 +184,14 @@ static char parseInt(FILE *in, int * intToChange){
     // TODO: test EOF
     char curr = fgetcLogged(in);
 
-    printf("Parsed Int- Before: %d", *intToChange);
+    //printf("Parsed Int- Before: %d", *intToChange);
 
     while(curr >= '0' &&  curr <= '9'){
         *intToChange = deciShiftLeft(*intToChange, curr);
         curr = fgetcLogged(in);
     }
-    printf(" After: %d", *intToChange);
-    printf(" Stopper: %c\n", curr);
+    //printf(" After: %d", *intToChange);
+    //printf(" Stopper: %c\n", curr);
 
     return curr;
 }
@@ -267,6 +280,30 @@ static int isDigit(char c){
     return -1;
 }
 
+/*
+ * pass pointer to char of the first value and it will return string length
+ * by reading the two
+ */
+static int parseCharNumber(char * first){
+    int num = *(first + 1);
+    num = num << 8;
+    num = num | (int) *first;
+    return num;
+}
+
+/*
+ * prints all characters in string, curr should point to 
+ * leader = '<' or '>'
+ */
+static char * outputLine(char leader, char * curr, FILE * out){
+    int len = parseCharNumber(curr);
+    curr += 2; // get to actual stirng portion
+    fprintf(out, "%c ", leader);
+    for(int i = 0; i < len; i++){
+        fprintf(out, "%c", *(curr++));
+    }
+    return curr;
+}
 
 /**
  * @brief Get the header of the next hunk in a diff file.
@@ -287,6 +324,7 @@ int hunk_next(HUNK *hp, FILE *in) {
     // TODO: test end of file right after header
     // TODO: enforce what happens when this is the first function being used
     // TODO: implement @91
+    // TODO: initialize hunk variables (buffers + file_finished)
 
     int headerParseStatus = 0;
     bool firstRun = true;
@@ -317,6 +355,22 @@ int hunk_next(HUNK *hp, FILE *in) {
     // TODO: check bogus lines numbers like 15,4d5
     // TODO: get rid of hunk
     hp->serial = counter++;
+
+    // refresh buffers
+    char * buffChar = hunk_additions_buffer;
+    for(int i = 0; i < HUNK_MAX; i++)
+        *(buffChar++) = 0;
+
+    buffChar = hunk_deletions_buffer;
+    for(int i = 0; i < HUNK_MAX; i++)
+        *(buffChar++) = 0;
+
+    // initializing variables
+    file_finished = 0;
+    lastAddPtr = hunk_additions_buffer;
+    lastAddCount = hunk_additions_buffer;
+    lastDelPtr = hunk_deletions_buffer;
+    lastDelCount = hunk_deletions_buffer;
     /*
     printf("Hunk Parsed!\n");
     printf("    serial: %d\n", hp->serial);
@@ -372,15 +426,19 @@ int hunk_getc(HUNK *hp, FILE *in) {
     // 1. normal action
     // 2. empty file
     // 3. file pointer reached the end of the file
-    lastUsed = FXN_GETC;
     if(lastUsed == FXN_GETC && errStatus == ERR)
         return errStatus = ERR; // further calls result in error
-    if(lastUsed == FXN_NEXT && errStatus <= 0)
+    if(lastUsed == FXN_NEXT && errStatus < 0)
         return errStatus = ERR; // requires next to be successful
     if(lastUsed == FXN_NONE) // next function has not been used at all
         return errStatus = ERR;
     if(lastChar < 0) // case EOF was reached before this
         return errStatus = ERR;
+    if(file_finished == 2)
+        return errStatus = ERR;
+    lastUsed = FXN_GETC;
+    // TODO check for finished EOS condition
+    // TODO reoganize ho this file finds EOS
     /*
      * 3 cases:
      * 1. called right after hunk_getc
@@ -398,14 +456,15 @@ int hunk_getc(HUNK *hp, FILE *in) {
     }
     */
 
+
     // Checking for malformed hunk in following ways:
     // 1. '< ', '> ', '---\n' formats must follow '\n'
-    // 2. '< ', '> ', '---\n' must occur at appropriate points by matching
+    // 2. '< ', '> ', '---\n' must occur at app1opriate points by matching
     //                        current level of del/add
     // 3. '< ', '> ', '---\n' must occur in corrent type
     // 4. side effect: determines which stage in (add, delete, or change)
     if(lastCharTemp == '\n'){
-        if(curr != '<' && curr != '>' && curr != '-')
+        if(curr != '<' && curr != '>' && curr != '-' && (curr < '0' || curr > '9'))
             return errStatus = ERR; // malformed hunk \n should be followed by '<>-'
 
         if(curr == '-'){
@@ -423,6 +482,8 @@ int hunk_getc(HUNK *hp, FILE *in) {
                 fgetcLogged(in) != '-' ||
                 fgetcLogged(in) != '\n')
                 return errStatus = ERR;
+            //return('?');
+            file_finished = 1;
             return errStatus = EOS;
         }
 
@@ -442,9 +503,10 @@ int hunk_getc(HUNK *hp, FILE *in) {
             curr = fgetcLogged(in); // first actual character
             if(curr < 0) //file did not end in \n
                 return errStatus = ERR;
-            remainingDels--; // TODO: should this be here?
+            //remainingDels--; // TODO: should this be here?
             addDelStatus = HUNK_DELETE_TYPE;
             errStatus = 0;
+            addToBuffer(curr, addDelStatus == HUNK_APPEND_TYPE);
             return curr;
         }
 
@@ -462,13 +524,23 @@ int hunk_getc(HUNK *hp, FILE *in) {
             if(fgetcLogged(in) != ' ')
                 return errStatus = ERR;
 
+
             curr = fgetcLogged(in);
             if(curr < 0) //file did not end in \n
                 return errStatus = ERR;
-            remainingAdds--; // TODO: should this also be here?
+            //remainingAdds--; // TODO: should this also be here?
             addDelStatus = HUNK_APPEND_TYPE;
             errStatus = 0;
+            addToBuffer(curr, addDelStatus == HUNK_APPEND_TYPE);
             return curr;
+        }
+
+        if(curr >= '0' && curr <= '9'){
+            if(file_finished == 2) return ERR; // EOS ALREADY RETURNED
+            ungetc(curr, in);
+            lastChar = '\n';
+            file_finished = 2;
+            return EOS; // runs into a new hunk indication
         }
     }
 
@@ -518,7 +590,7 @@ void hunk_show(HUNK *hp, FILE *out) {
     // Check if hunk is available
     
     // HACK: make sure to sync with conditions in HUNK-C
-    if(lastUsed == FXN_NEXT && errStatus <= 0)
+    if(lastUsed == FXN_NEXT && errStatus < 0)
         return; // requires next to be successful
     if(lastUsed == FXN_NONE) // next function has not been used at all
         return;
@@ -540,16 +612,54 @@ void hunk_show(HUNK *hp, FILE *out) {
     fprintf(out, "\n");
 
     // return if not completed, all printing is finished
-    if(remainingDels != 0 || remainingAdds != 0)
+    if(file_finished < 2)
         return;
     
 
     // NEXT figure out how to print the output
-    int numCharacters;
     char * curr;
+    char * start;
+    char leader = '?';
+    int trunc = 0;
 
+    // print out addition / deletion / first section of change
+    if( hp->type == HUNK_DELETE_TYPE || hp->type == HUNK_CHANGE_TYPE){
+        start = curr = hunk_deletions_buffer;
+        leader = '<';
+        trunc = delsTrunc;
+    } else { 
+        start = curr = hunk_additions_buffer;
+        leader = '>';
+        trunc = addsTrunc;
+    }
 
+    // if curr < HUNK_MAX or 0x0, 0x0 not found
+    while(curr - start < HUNK_MAX && (*curr != 0x0  ||  *(curr + 1) != 0x0)){
+        curr = outputLine(leader, curr, out);
+    }
+
+    if(1 == trunc)
+        fprintf(out ,"...\n");
+    
+    if(hp -> type != HUNK_CHANGE_TYPE)
+        return;
+
+    // Print addition section of change
+    fprintf(out ,"---\n");
+    start = curr = hunk_additions_buffer;
+    leader = '>';
+    trunc = addsTrunc;
+
+    // if curr < HUNK_MAX or 0x0, 0x0 not found
+    while(curr - start < HUNK_MAX && (*curr != 0x0  ||  *(curr + 1) != 0x0)){
+        curr = outputLine(leader, curr, out);
+    }
+
+    if(1 == trunc)
+        fprintf(out ,"...\n");
+    return;
 }
+
 
 /**
  * @brief  Patch a file as specified by a diff.
@@ -604,8 +714,22 @@ int patch(FILE *in, FILE *out, FILE *diff) {
     // Errors to detect:
     // lines are invalid order @94
     // too many additions or deletions @87
+    // empty diff file
+
+    /*
+    HUNK hunk;
+    int lineCount = 0;
+    int hunkNextStatus = 0;
+
+    do{
+
+    } while(hunkNextStatus > 0);
+    */
+
+
     abort();
 }
+
 
 
 
