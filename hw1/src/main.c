@@ -59,15 +59,34 @@ int main(int argc, char **argv)
     FILE * diff;
     diff = fopen(diff_filename, "r"); // handle file close
 
-    patch(stdin, stdout, diff);
+    //TODO: close file
+    int res = patch(stdin, stdout, diff);
+    if(res == 0){
+        fclose(diff);
+        return EXIT_SUCCESS;
+    } else {
+        fclose(diff);
+        return EXIT_FAILURE;
+    }
 
-
-    /* working tests:
+    /*
     FILE * filePtr;
     filePtr = fopen(diff_filename, "r"); // handle file close
     HUNK hunk;
 
+    printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
+    printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
+    printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
+    char hgc_tester = 'z';
+    do{
+        printf("%d", hgc_tester = hunk_getc(&hunk, filePtr));
+    }while(hgc_tester > 0);
+    */
+
+
+
     // first hunk:
+    /*
     printf("hunk_next result: %d\n", hunk_next(&hunk, filePtr));
     char hgc_tester = 'z';
     printf("\n Line 1: ");
@@ -111,7 +130,7 @@ int main(int argc, char **argv)
 
     printf("hunk_show:\n");
     hunk_show(&hunk, stdout);
-   */
+    */
     
     /*
      * File testing

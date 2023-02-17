@@ -305,6 +305,16 @@ static char * outputLine(char leader, char * curr, FILE * out){
     return curr;
 }
 
+static void printHunk(HUNK * hp){
+    printf("--------------\nHunk Parsed!\n");
+    printf("    serial: %d\n", hp->serial);
+    printf("    old_start: %d\n", hp->old_start);
+    printf("    old_end: %d\n", hp->old_end);
+    printf("    new_start: %d\n", hp->new_start);
+    printf("    new_end: %d\n", hp->new_end);
+    printf("--------------\n\n");
+}
+
 /**
  * @brief Get the header of the next hunk in a diff file.
  * @details This function advances to the beginning of the next hunk
@@ -352,6 +362,11 @@ int hunk_next(HUNK *hp, FILE *in) {
         return errStatus =EOF;
     }
 
+    if(hp->old_end != hp->old_start && hp->type == HUNK_APPEND_TYPE)
+        return errStatus = ERR; // bad format for append
+    if(hp->new_end != hp->new_start && hp->type == HUNK_DELETE_TYPE)
+        return errStatus = ERR;
+
     // TODO: check bogus lines numbers like 15,4d5
     // TODO: get rid of hunk
     hp->serial = counter++;
@@ -371,6 +386,7 @@ int hunk_next(HUNK *hp, FILE *in) {
     lastAddCount = hunk_additions_buffer;
     lastDelPtr = hunk_deletions_buffer;
     lastDelCount = hunk_deletions_buffer;
+
     /*
     printf("Hunk Parsed!\n");
     printf("    serial: %d\n", hp->serial);
@@ -427,15 +443,28 @@ int hunk_getc(HUNK *hp, FILE *in) {
     // 2. empty file
     // 3. file pointer reached the end of the file
     if(lastUsed == FXN_GETC && errStatus == ERR)
+    {
         return errStatus = ERR; // further calls result in error
+    }
     if(lastUsed == FXN_NEXT && errStatus < 0)
+    {
         return errStatus = ERR; // requires next to be successful
+    }
     if(lastUsed == FXN_NONE) // next function has not been used at all
+    {
         return errStatus = ERR;
+    }
+    /*
     if(lastChar < 0) // case EOF was reached before this
+    {
+        printf("TEST4");
         return errStatus = ERR;
-    if(file_finished == 2)
+    }
+    */
+    if(file_finished == 2) //file is finished or section is finished 
+    {
         return errStatus = ERR;
+    }
     lastUsed = FXN_GETC;
     // TODO check for finished EOS condition
     // TODO reoganize ho this file finds EOS
@@ -447,6 +476,16 @@ int hunk_getc(HUNK *hp, FILE *in) {
      */
     char lastCharTemp = lastChar;
     char curr = fgetcLogged(in);
+
+    if(curr < 0){ //end of file reached
+        /*printf("\nCASE: lastchar = %d\n", lastCharTemp);*/
+        if(lastCharTemp != '\n'){ // files must end with \n
+            /*printf("status should be error");*/
+            return errStatus = ERR;
+        }
+        //printf("CASE2");
+        return errStatus = EOS; //reaching \nEOF returns EOS
+    }
 
     // if newline, then handle it was if pointing right after newLine
     /* newline should be returned
@@ -464,9 +503,14 @@ int hunk_getc(HUNK *hp, FILE *in) {
     // 3. '< ', '> ', '---\n' must occur in corrent type
     // 4. side effect: determines which stage in (add, delete, or change)
     if(lastCharTemp == '\n'){
-        if(curr != '<' && curr != '>' && curr != '-' && (curr < '0' || curr > '9'))
+        /*printf("CASE13");*/
+        if(curr != '<' && curr != '>' && curr != '-' &&
+                (curr < '0' || curr > '9') && curr != -1) {
+            /*printf("CASE4");*/
             return errStatus = ERR; // malformed hunk \n should be followed by '<>-'
+        }
 
+        /*printf("CASE14");*/
         if(curr == '-'){
             /*
             // All deletes should have been read.
@@ -480,29 +524,38 @@ int hunk_getc(HUNK *hp, FILE *in) {
             // check for '---\n'
             if( fgetcLogged(in) != '-' ||
                 fgetcLogged(in) != '-' ||
-                fgetcLogged(in) != '\n')
+                fgetcLogged(in) != '\n'){
+                /*printf("CASE13");*/
                 return errStatus = ERR;
+            }
             //return('?');
             file_finished = 1;
             return errStatus = EOS;
         }
 
+        /*printf("CASE15");*/
         if(curr == '<'){
             /*
             // Deletes must remain
             if(remainingDels <= 0);
                 return errStatus =ERR;
                 */
-            if(hp->type == HUNK_APPEND_TYPE)
+
+            if(hp->type == HUNK_APPEND_TYPE){
+                /*printf("CASE12");*/
                 return errStatus = ERR;
+            }
             
             // checks for '< '
-            if(fgetcLogged(in) != ' ')
+            if(fgetcLogged(in) != ' '){
+                /*printf("CASE11");*/
                 return errStatus = ERR;
-
+            }
             curr = fgetcLogged(in); // first actual character
-            if(curr < 0) //file did not end in \n
+            if(curr < 0){ //file did not end in \n
+                /*printf("CASE8");*/
                 return errStatus = ERR;
+            }
             //remainingDels--; // TODO: should this be here?
             addDelStatus = HUNK_DELETE_TYPE;
             errStatus = 0;
@@ -510,6 +563,7 @@ int hunk_getc(HUNK *hp, FILE *in) {
             return curr;
         }
 
+        /*printf("CASE16");*/
         if(curr == '>'){
             /*
             // adds must remain
@@ -521,13 +575,16 @@ int hunk_getc(HUNK *hp, FILE *in) {
                 return errStatus = ERR;
 
             // checks for '< '
-            if(fgetcLogged(in) != ' ')
+            if(fgetcLogged(in) != ' '){
+                /*printf("CASE7");*/
                 return errStatus = ERR;
-
+            }
 
             curr = fgetcLogged(in);
-            if(curr < 0) //file did not end in \n
+            if(curr < 0){ //file did not end in \n
+                /*printf("CASE6");*/
                 return errStatus = ERR;
+            }
             //remainingAdds--; // TODO: should this also be here?
             addDelStatus = HUNK_APPEND_TYPE;
             errStatus = 0;
@@ -535,20 +592,20 @@ int hunk_getc(HUNK *hp, FILE *in) {
             return curr;
         }
 
+        /*printf("CASE17");*/
         if(curr >= '0' && curr <= '9'){
-            if(file_finished == 2) return ERR; // EOS ALREADY RETURNED
+            if(file_finished == 2){
+                /*printf("CASE5");*/
+                return errStatus = ERR; // EOS ALREADY RETURNED
+            }
             ungetc(curr, in);
             lastChar = '\n';
             file_finished = 2;
-            return EOS; // runs into a new hunk indication
+            return errStatus = EOS; // runs into a new hunk indication
         }
+        /*printf("CASE18");*/
     }
 
-    if(curr < 0){ //end of file reached
-        if(lastChar != '\n') // files must end with \n
-            return errStatus = ERR;
-        return errStatus = EOS; //reaching \nEOF returns EOS
-    }
     errStatus = 0;
 
     addToBuffer(curr, addDelStatus == HUNK_APPEND_TYPE);
@@ -661,6 +718,133 @@ void hunk_show(HUNK *hp, FILE *out) {
 }
 
 
+/*
+ * OUTPUT STUFF
+ */
+static int outputError(HUNK * hp, char * msg){
+    if((global_options & 0x4) != 0x4){
+        fprintf(stderr, msg);
+        hunk_show(hp, stderr);
+    }
+    return 0;
+}
+
+static int outputC(char c){
+    if((global_options & 0x2) != 0x2){
+        fprintf(stdout,"%c", c);
+    }
+    return 0;
+}
+
+static char outUntilFound(FILE *in, FILE *out, char * chars, bool shouldMatch){
+    // TODO: test EOF
+    //printf("Advancing: \n");
+    char curr;
+    char *charPtr = chars;
+    do{
+        // pass through until found
+        curr = fgetcLogged(in);
+        outputC(curr);
+        do{ //error checking
+            if((curr == *charPtr) == shouldMatch)
+                return curr;
+        } while (*(charPtr++) != 0);
+        charPtr = chars;
+
+        // printf("%c", curr);
+    } while(curr > 0);
+
+    return curr;
+}
+
+/*
+ * Error codes:
+ * positive: number of lines deleted
+ * -1: diff file does not match input
+ * -2: Malformed Hunk found by hunk_getc
+ * -3: too many lines to delete
+ * -4: not enough lines to delete // not enough supplied
+ * -5: no newline at the end of the file
+ */
+static int deleteLines(FILE * in, FILE * out, FILE * diff, HUNK * hp){
+    // hunk_getc to get next thing
+    int numLinesToDelete = hp->old_end - hp ->old_start + 1;
+    char checker = hunk_getc(hp, diff);
+    int linesDeleted = 0;
+    //char prev = -1;
+
+    /*
+    printf("init: %d\n", checker);
+    printf("hunkNext: %d\n", hunkNextStatus);
+    */
+   
+    while(checker > 0){
+        // check if hunk_getc matches
+        if(numLinesToDelete == linesDeleted)
+            return -3;
+        if(checker != fgetc(in)){
+            // if it doesn't match, print error
+            return -1;
+        }
+        /*printf("| %d:  ", checker );*/
+        if(checker == '\n'){
+            linesDeleted += 1;
+        }
+        //prev = checker;
+        checker = hunk_getc(hp, diff);
+        // if matches, let it pass through
+    }
+
+    if(numLinesToDelete > linesDeleted){
+        /*printf("checker: %d\n", checker);*/
+        /*printf("numLinesToDelete: %d\n", numLinesToDelete);*/
+        /*printf("linesDeleted: %d\n", linesDeleted);*/
+        /*printf("prev: %d\n", prev);*/
+        return -4;
+    }
+    if(checker == ERR){
+        return -2;
+    }
+    return linesDeleted;
+}
+
+/*
+ * Error codes:
+ * positive: number of lines appended
+ * -1 malformed hunk
+ * -2 too many lines provided
+ * -3 not enough lines provided
+ */
+static int appendLines(FILE * in, FILE * out, FILE * diff, HUNK * hp){
+    int numLinesToAppend = hp->new_end - hp ->new_start + 1;
+    int linesAppended = 0;
+    char checker = hunk_getc(hp, diff);
+    //char prev = -1;
+
+    while(checker > 0){
+        if(linesAppended == numLinesToAppend)
+            return -2;
+
+        outputC(checker);
+        if(checker == '\n')
+            linesAppended++;
+
+        //prev = checker;
+        checker = hunk_getc(hp, diff);
+        // if matches, let it pass through
+    }
+
+    if(checker == ERR){
+        return -1;
+    }
+    if(numLinesToAppend != linesAppended){
+        return -3;
+    }
+
+    return numLinesToAppend;
+}
+
+
 /**
  * @brief  Patch a file as specified by a diff.
  * @details  This function reads a diff file from an input stream
@@ -715,19 +899,165 @@ int patch(FILE *in, FILE *out, FILE *diff) {
     // lines are invalid order @94
     // too many additions or deletions @87
     // empty diff file
+    // bad order of add/delete lines i.e. 5,3@4
+    // beginning of the paragraph change
 
-    /*
+    int firstTime = 1;
+    HUNK prevHunk;
     HUNK hunk;
     int lineCount = 0;
-    int hunkNextStatus = 0;
+    int hunkNextStatus = hunk_next(&hunk, diff);
+    int hunkImpStatus = 0;
 
     do{
+        /*printHunk(&hunk);*/
+        /*
+         * Check for bad hunk ordering
+         */
+        if(firstTime == 0 && prevHunk.old_end >= hunk.old_start){
+            outputError(&hunk, "ERR: hunks overlap\n");
+            return -1;
+        }
+        if(hunk.old_end < hunk.old_start){
+            outputError(&hunk, "ERR: hunk old numbering out of order\n");
+            return -1;
+        }
+        if(hunk.new_end < hunk.new_start){
+            outputError(&hunk, "ERR: hunk new numbering out of order\n");
+            return -1;
+        }
 
-    } while(hunkNextStatus > 0);
-    */
 
 
-    abort();
+        if(firstTime == 1)
+            firstTime = 0;
+        // also delete should never start with 0
+        // handle bad hunks
+
+        // handle delete
+        if(hunk.type == HUNK_DELETE_TYPE){
+            if(lineCount == 0)
+                lineCount++;
+            while(lineCount< hunk.old_start){
+
+                lineCount++;
+                /*
+                printf("line %d passed, ", lineCount);
+                printf("looking for %d :", hunk.old_start);
+                */
+                outUntilFound(in, out, "\n", true);
+            }
+            hunkImpStatus = deleteLines(in, out, diff, &hunk);
+            if(hunkImpStatus == -1){
+                outputError(&hunk, "ERR: Diff file does not match input\n");
+                return -1;
+            }
+            if(hunkImpStatus == -2){
+                outputError(&hunk, "ERR: Malformed Hunk found when deleting\n");
+                return -1;
+            }
+            if(hunkImpStatus == -3){
+                outputError(&hunk, "ERR: diff has too many lines to delete\n");
+                return -1;
+            }
+            if(hunkImpStatus == -4){
+                outputError(&hunk, "ERR: diff has not enough lines to delete\n");
+                return -1;
+            }
+            lineCount += hunkImpStatus;
+        }
+
+        // handle append
+        if(hunk.type == HUNK_APPEND_TYPE){ // delete portion
+            while(lineCount <= hunk.old_start){
+                if(hunk.old_start == 0){
+                    lineCount++;
+                    break;
+                }
+                lineCount++;
+                /*
+                printf("line %d passed, ", lineCount);
+                printf("looking for %d :", hunk.old_start);
+                */
+                outUntilFound(in, out, "\n", true);
+            }
+            hunkImpStatus = appendLines(in, out, diff, &hunk);
+            if(hunkImpStatus == -1){
+                outputError(&hunk, "ERR: Malformed Hunk found when appending\n");
+                return -1;
+            }
+            if(hunkImpStatus == -2){
+                outputError(&hunk, "ERR: diff has too many lines to append\n");
+                return -1;
+            }
+            if(hunkImpStatus == -3){
+                outputError(&hunk, "ERR: diff has not enough lines to append\n");
+                return -1;
+            }
+                                           //
+        }
+
+        // handle change
+        if(hunk.type == HUNK_CHANGE_TYPE){ // append portion
+            if(lineCount == 0)
+                lineCount++;
+            while(lineCount< hunk.old_start){
+
+                lineCount++;
+                /*printf("line %d passed, ", lineCount);*/
+                /*printf("looking for %d :", hunk.old_start);*/
+                outUntilFound(in, out, "\n", true);
+            }
+            hunkImpStatus = deleteLines(in, out, diff, &hunk);
+            if(hunkImpStatus == -1){
+                outputError(&hunk, "ERR: change hunk does not match input\n");
+                return -1;
+            }
+            if(hunkImpStatus == -2){
+                outputError(&hunk, "ERR: Malformed Hunk during change\n");
+                return -1;
+            }
+            if(hunkImpStatus == -3){
+                outputError(&hunk, "ERR: change hunk has too many lines to delete\n");
+                return -1;
+            }
+            if(hunkImpStatus == -4){
+                outputError(&hunk, "ERR: change hunk has not enough lines to delete\n");
+                return -1;
+            }
+            lineCount += hunkImpStatus;
+
+            hunkImpStatus = appendLines(in, out, diff, &hunk);
+            if(hunkImpStatus == -1){
+                outputError(&hunk, "ERR: Malformed Hunk during change>append\n");
+                return -1;
+            }
+            if(hunkImpStatus == -2){
+                outputError(&hunk, "ERR: change hunk has too many lines to append\n");
+                return -1;
+            }
+            if(hunkImpStatus == -3){
+                outputError(&hunk, "ERR: change hunk has not enough lines to append\n");
+                return -1;
+            }
+
+        }
+
+        prevHunk.type = hunk.type;
+        prevHunk.serial = hunk.serial;
+        prevHunk.old_start = hunk.old_start;
+        prevHunk.old_end = hunk.old_end;
+        prevHunk.new_start = hunk.new_start;
+        prevHunk.new_end = hunk.new_end;
+
+        hunkNextStatus = hunk_next(&hunk, diff);
+    } while(hunkNextStatus >= 0);
+
+    // ERROR
+    if(hunkNextStatus == ERR)
+        outputError(&hunk, "ERR: Malformed Hunk found by hunk_next\n");
+
+    return 0;
 }
 
 
