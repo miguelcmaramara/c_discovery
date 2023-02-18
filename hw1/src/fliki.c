@@ -723,7 +723,7 @@ void hunk_show(HUNK *hp, FILE *out) {
  */
 static int outputError(HUNK * hp, char * msg){
     if((global_options & 0x4) != 0x4){
-        fprintf(stderr, msg);
+        fprintf(stderr,"%s", msg);
         hunk_show(hp, stderr);
     }
     return 0;
