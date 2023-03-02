@@ -192,14 +192,14 @@ void ask(char *pat, ...){ ; }
 void say(char *pat, ...) {
     va_list ap;
     va_start(ap, pat);
-    fprintf(stderr, pat, va_arg(ap, int));
+    vfprintf(stderr, pat, ap);
     Fflush(stderr);
 }
 
 void fatal(char *pat, ...) {
     va_list ap;
     va_start(ap, pat);
-    say(pat,va_arg(ap, int));
+    say(pat, ap);
     my_exit(1);
 }
 
@@ -209,7 +209,7 @@ void ask(char *pat, ...) {
 
     va_list ap;
     va_start(ap, pat);
-    say(pat, va_arg(ap, int));
+    say(pat, ap);
     if (ttyfd >= 0) {
         r = read(ttyfd, buf, sizeof buf);
         Close(ttyfd);
@@ -306,7 +306,7 @@ bool plan_a(char * filename) {
     register char *s;
     register LINENUM iline;
 
-    if (stat(filename,&filestat) < 0) {
+    if (stat(filename,&filestat) < 0) { //checks if file is found
         Sprintf(buf,"RCS/%s%s",filename,RCSSUFFIX);
         if (stat(buf,&filestat) >= 0 || stat(buf+4,&filestat) >= 0) {
             Sprintf(buf,CHECKOUT,filename);
@@ -330,6 +330,7 @@ bool plan_a(char * filename) {
                 fatal("Can't find %s.\n",filename);
         }
     }
+
     if ((filestat.st_mode & S_IFMT) & ~S_IFREG)
         fatal("%s is not a normal file--can't patch.\n",filename);
     i_size = filestat.st_size;
@@ -346,29 +347,29 @@ bool plan_a(char * filename) {
         return FALSE;
     }
     Close(ifd);
-    if (i_womp[i_size-1] != '\n')
+    if (i_womp[i_size-1] != '\n')   // add \n to end of file if one doesn't exist
         i_womp[i_size++] = '\n';
     i_womp[i_size] = '\0';
 
     /* count the lines in the buffer so we know how many pointers we need */
 
     iline = 0;
-    for (s=i_womp; *s; s++) {
+    for (s=i_womp; *s; s++) {   
         if (*s == '\n')
-            iline++;
+            iline++;    // counts lines
     }
     /*NOSTRICT*/
     i_ptr = (char **)malloc((MEM)((iline + 1) * sizeof(char *)));
     if (i_ptr == Null(char **)) {       /* shucks, it was a near thing */
-        free((char *)i_womp);
+        free((char *)i_womp);       // iptr does not work, no space found
         return FALSE;
     }
     
     /* now scan the buffer and build pointer array */
 
     iline = 1;
-    i_ptr[iline] = i_womp;
-    for (s=i_womp; *s; s++) {
+    i_ptr[iline] = i_womp;          // iptr[0] = null ptr
+    for (s=i_womp; *s; s++) {       // builds points to \n terminated lines
         if (*s == '\n')
             i_ptr[++iline] = s+1;       /* these are NOT null terminated */
     }
@@ -564,15 +565,12 @@ LINENUM pch_hunk_beg() {
     // return 0; //PLACEHODLER 
 }
 
-char * savestr(register char * s)
-// register char *s;
-{
+char * savestr(register char * s) {
     register char  *rv,
                    *t;
-
     t = s;
     while (*t++)
-    rv = malloc((MEM) (t - s));
+        rv = malloc((MEM) (t - s) + 1);
     if (rv == NULL)
         fatal ("patch: out of memory (savestr)\n");
     t = rv;
@@ -1105,7 +1103,7 @@ bool patch_match(LINENUM base, LINENUM offset) {
 }
 
 void scan_input(char * filename) {
-    bool plan_a();
+    // bool plan_a();
 
     if (!plan_a(filename))
         plan_b(filename);
