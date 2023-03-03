@@ -176,6 +176,7 @@ int my_exit(int status) {
     Unlink(TMPREJNAME);
     Unlink(TMPPATNAME);
     exit(status);
+
 }
 
 #ifdef lint
@@ -210,6 +211,15 @@ void ask(char *pat, ...) {
     va_list ap;
     va_start(ap, pat);
     say(pat, ap);
+    // printf("\n********************\n");// del
+    for(char * s = buf; *s; s++)    // clear out buffer beforehand
+        *s = 0;
+    // printf("\n********************\n");
+    // printf("\n********************\n");
+    // for(char * s = buf; *s; s++)
+        // printf("%c", *s);
+    // printf("\n********************\n");
+    
     if (ttyfd >= 0) {
         r = read(ttyfd, buf, sizeof buf);
         Close(ttyfd);
@@ -218,6 +228,11 @@ void ask(char *pat, ...) {
         r = read(2, buf, sizeof buf);
     if (r <= 0)
         buf[0] = 0;
+
+    // printf("\n********************\n");
+    // for(char * s = buf; *s; s++)
+        // printf("%c", *s);
+    // printf("\n********************\n");
 }
 #endif // lint
 
@@ -278,12 +293,28 @@ static LINENUM tiline[2] = {-1,-1};     /* 1st line in each buffer */
 static LINENUM lines_per_buf;           /* how many lines per buffer */
 static int tireclen;                    /* length of records in tmp file */
 
+void free_inputs(){
+    if(i_womp != Nullch)
+        free(i_womp);
+
+
+    if (i_ptr != Null(char**))
+        free((char *)i_ptr);
+
+    free(tibuf[0]);
+    free(tibuf[1]);
+    
+
+}
+
 void re_input() {
     if (using_plan_a) {
         i_size = 0;
         /*NOSTRICT*/
         if (i_ptr != Null(char**))
             free((char *)i_ptr);
+        if(i_womp != Nullch)
+            free(i_womp);
         i_womp = Nullch;
         i_ptr = Null(char **);
     }
@@ -335,6 +366,8 @@ bool plan_a(char * filename) {
         fatal("%s is not a normal file--can't patch.\n",filename);
     i_size = filestat.st_size;
     /*NOSTRICT*/
+    if(i_womp != Nullch)
+        free(i_womp);
     i_womp = malloc((MEM)(i_size+2));
     if (i_womp == Nullch)
         return FALSE;
@@ -359,7 +392,7 @@ bool plan_a(char * filename) {
             iline++;    // counts lines
     }
     /*NOSTRICT*/
-    i_ptr = (char **)malloc((MEM)((iline + 1) * sizeof(char *)));
+    i_ptr = (char **)malloc((MEM)((iline + 2) * sizeof(char *)));
     if (i_ptr == Null(char **)) {       /* shucks, it was a near thing */
         free((char *)i_womp);       // iptr does not work, no space found
         return FALSE;
@@ -371,7 +404,7 @@ bool plan_a(char * filename) {
     i_ptr[iline] = i_womp;          // iptr[0] = null ptr
     for (s=i_womp; *s; s++) {       // builds points to \n terminated lines
         if (*s == '\n')
-            i_ptr[++iline] = s+1;       /* these are NOT null terminated */
+            i_ptr[++iline] = s+1;       /* these are NOT null terminated */ // changed order of inc
     }
     input_lines = iline - 1;
 
@@ -566,11 +599,13 @@ LINENUM pch_hunk_beg() {
 }
 
 char * savestr(register char * s) {
+    if(s == Nullch)
+        return Nullch;
     register char  *rv,
                    *t;
     t = s;
-    while (*t++)
-        rv = malloc((MEM) (t - s) + 1);
+    while (*t++);// unsure about this change
+    rv = malloc((MEM) (t - s) + 1); // allocate 
     if (rv == NULL)
         fatal ("patch: out of memory (savestr)\n");
     t = rv;
@@ -599,7 +634,7 @@ void ignore_signals()
 
 
 char * fetchname(char * at) {
-    char *s = savestr(at);
+    char *s = savestr(at);  // already freed
     char *name;
     register char *t;
     char tmpbuf[200];
@@ -636,8 +671,8 @@ int intuit_diff_type() {
     bool this_line_is_command = FALSE;
     register int indent;
     register char *s, *t;
-    char *oldname;
-    char *newname;
+    char *oldname = Nullch;
+    char *newname = Nullch;
     bool no_filearg = (filearg[0] == Nullch);
 
     Fseek(pfp,p_base,0);
@@ -670,11 +705,18 @@ int intuit_diff_type() {
             first_command_line = this_line;
             p_indent = indent;          /* assume this for now */
         }
-        if (strnEQ(s,"*** ",4))
+        if (strnEQ(s,"*** ",4)){
+            if(oldname != Nullch)
+                free(oldname);
             oldname = fetchname(s+4);
-        else if (strnEQ(s,"--- ",4)) {
+
+        } else if (strnEQ(s,"--- ",4)) {
+            if(newname != Nullch)
+                free(newname);
             newname = fetchname(s+4);
             if (no_filearg) {
+                // if((oldname || newname) && filearg[0] != Nullch)
+                    // free(filearg[0]);
                 if (oldname && newname) {
                     if (strlen(oldname) < strlen(newname))
                         filearg[0] = oldname;
@@ -688,9 +730,12 @@ int intuit_diff_type() {
             }
         }
         else if (strnEQ(s,"Index:",6)) {
-            if (no_filearg) 
+            if (no_filearg) {
+                // if((oldname || newname) && filearg[0] != Nullch)
+                    // free(filearg[0]);
                 filearg[0] = fetchname(s+6);
                                         /* this filearg might get limboed */
+            }
         }
         else if (strnEQ(s,"Prereq:",7)) {
             for (t=s+7; isspace(*t); t++) ;
@@ -702,17 +747,25 @@ int intuit_diff_type() {
                 revision = Nullch;
             }
         }
-        if ((!diff_type || diff_type == ED_DIFF) &&
+        if ((!diff_type || diff_type == ED_DIFF) &&     // next line after outname
           first_command_line >= 0L &&
           strEQ(s,".\n") ) {
             p_indent = indent;
             p_start = first_command_line;
+            if(filearg[0] == newname)
+                free(oldname);
+            else
+                free(newname);
             return ED_DIFF;
         }
         if ((!diff_type || diff_type == CONTEXT_DIFF) &&
                  strnEQ(s,"********",8)) {
             p_indent = indent;
             p_start = this_line;
+            if(filearg[0] == newname)
+                free(oldname);
+            else
+                free(newname);
             return CONTEXT_DIFF;
         }
         if ((!diff_type || diff_type == NORMAL_DIFF) && 
@@ -720,6 +773,10 @@ int intuit_diff_type() {
           (strnEQ(s,"< ",2) || strnEQ(s,"> ",2)) ) {
             p_start = previous_line;
             p_indent = indent;
+            if(filearg[0] == newname)
+                free(oldname);
+            else
+                free(newname);
             return NORMAL_DIFF;
         }
     }
@@ -806,11 +863,11 @@ bool there_is_another_patch() {
 }
 
 char * pgets(char *bf,int sz, FILE *fp) {
-    char *ret = fgets(bf,sz,fp);
+    char *ret = fgets(bf,sz,fp);    // contents of buffer
     register char *s;
     register int indent = 0;
 
-    if (p_indent && ret != Nullch) {
+    if (p_indent && ret != Nullch) {    
         for (s=buf; indent < p_indent && (*s == ' ' || *s == '\t'); s++) {
             if (*s == '\t')
                 indent += 8 - (indent % 7);
@@ -829,7 +886,7 @@ void pch_swap() {
     char tp_char[MAXHUNKSIZE];          /* +, -, and ! */
     int tp_len[MAXHUNKSIZE];            /* length of each line */
     register LINENUM i, n;
-    bool blankline;
+    bool blankline = FALSE;
     register char *s;
 
     i = p_first;
@@ -1020,7 +1077,7 @@ bool another_hunk() {
         p_end = p_ptrn_lines + 1 + max - min + 1;
         p_newfirst = min;
         p_repl_lines = max - min + 1;
-        Sprintf(buf,"*** %ld,%ld\n", p_first, p_first + p_ptrn_lines - 1);
+        Sprintf(buf,"*** %ld,%ld\n", p_first, p_first + p_ptrn_lines - 1); // problem line
         p_line[0] = savestr(buf);
         p_char[0] = '*';
         for (i=1; i<=p_ptrn_lines; i++) {
@@ -1249,6 +1306,8 @@ void do_ed_script() {
     long beginning_of_this_line;
 
     Unlink(TMPOUTNAME);
+    if(filearg[0] == Nullch)    // added
+        free(filearg[0]);
     copy_file(filearg[0],TMPOUTNAME);
     if (verbose)
         Sprintf(buf,"/bin/ed %s",TMPOUTNAME);
@@ -1484,14 +1543,11 @@ void get_some_switches() {
         // c = getopt_long(Argc, Argv, const char *shortopts, const struct option *longopts, int *longind)
     // }
 
-
     register char *s;
-
-    rejname[0] = '\0';  // fills first val in rejname array with '/0'
-    if (!Argc)  // noargs
+    rejname[0] = '\0';
+    if (!Argc)
         return;
-
-    for (Argc--,Argv++; Argc; Argc--,Argv++) { // loops through all args
+    for (Argc--,Argv++; Argc; Argc--,Argv++) {
         s = Argv[0];
         if (strEQ(s,"+")) {
             return;                     /* + will be skipped by for loop */
@@ -1706,6 +1762,8 @@ int orig_main(int argc, char **argv) {
         }
         set_signals();
     }
+    // reinitialize_almost_everything();
+    // free_inputs();
     my_exit(0);
     return 0;
 }
