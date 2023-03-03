@@ -20,7 +20,7 @@
 #include <unistd.h>
 #include <fcntl.h>  // for open macro
 #include <stdarg.h>    // for variable argument lists
-// #include <getopt.h> // for parsing command line args
+#include <getopt.h> // for parsing command line args
 /* shut lint up about the following when return value ignored */
 
 #define Signal (void)signal     // typecasts the non-void functions as void so
@@ -200,7 +200,8 @@ void say(char *pat, ...) {
 void fatal(char *pat, ...) {
     va_list ap;
     va_start(ap, pat);
-    say(pat, ap);
+    vfprintf(stderr, pat, ap);
+    Fflush(stderr);
     my_exit(1);
 }
 
@@ -210,7 +211,9 @@ void ask(char *pat, ...) {
 
     va_list ap;
     va_start(ap, pat);
-    say(pat, ap);
+    // say(pat, ap);
+    vfprintf(stderr, pat, ap);
+    Fflush(stderr);
     // printf("\n********************\n");// del
     for(char * s = buf; *s; s++)    // clear out buffer beforehand
         *s = 0;
@@ -1533,50 +1536,101 @@ void apply_hunk(LINENUM where) {
 
 void get_some_switches() {
 
-    // int c;
+    int c = '?';
+    // char *s = Argv[0];
+    int option_index = 0;
+    // int *flag;
 
-    // static struct option options[] = {
-    // }
+    // no_argument, required_argument, optional_argument
+    static struct option options[] = {
+        {"backup-extension",    required_argument,  0, 'b'},
+        {"context-diff",        no_argument,        0, 'c'},
+        {"directory",           required_argument,  0, 'd'},
+        {"do-defines",          required_argument,  0, 'D'},
+        {"ed-script",           no_argument,        0, 'e'},
+        {"loose-matching",      no_argument,        0, 'l'},
+        {"normal-diff",         no_argument,        0, 'n'},
+        {"output-file",         required_argument,  0, 'o'},
+        {"pathnames",           no_argument,        0, 'p'},
+        {"reject-file",         required_argument,  0, 'r'},
+        {"reverse",             no_argument,        0, 'R'},
+        {"silent",              no_argument,        0, 's'},
+        {"debug",               no_argument,  0, 'x'},
+        {0, 0, 0, 0}
+    };
 
-    // while(TRUE){
-        // // BOOKMARK
-        // c = getopt_long(Argc, Argv, const char *shortopts, const struct option *longopts, int *longind)
-    // }
-
-    register char *s;
     rejname[0] = '\0';
-    if (!Argc)
-        return;
-    for (Argc--,Argv++; Argc; Argc--,Argv++) {
-        s = Argv[0];
-        if (strEQ(s,"+")) {
-            return;                     /* + will be skipped by for loop */
+
+    while(TRUE){
+        if(Argv[optind] == 0)
+            return;
+
+        if(*Argv[optind] == '-' && *(Argv[optind] + 1) == 'x'){
+#ifdef DEBUGGING
+            debug = atoi(Argv[optind] + 2);
+            optind += 1;
+#else
+            fatal("Unrecognized switch: %s\n", Argv[optind]);
+#endif
         }
-        if (*s != '-' || !s[1]) {
+        // if(c == 'x'){
+            // c = getopt_long(Argc, Argv, "+b:cd:D:elno:pr:Rsx", options, &option_index);
+            // continue;
+        // }
+
+        c = getopt_long(Argc, Argv, "+b:cd:D:elno:pr:Rsx", options, &option_index);
+
+        if(c < 0 && Argv[optind] == 0/*optind== Argc*/)
+            return;
+
+        if(c == -1 && (*Argv[optind] == '+' && *(Argv[optind] + 1) == 0)){
+            optind++;
+            return;     // '+' was found
+        }
+
+
+        if (c == -1 && (*Argv[optind] != '-' || !*(Argv[optind] + 1))) {
+        // if (*s != '-' || !s[1]) {
             if (filec == MAXFILEC)
                 fatal("Too many file arguments.\n");
-            filearg[filec++] = savestr(s);
+            filearg[filec++] = savestr(Argv[optind++]);  // handles larger args
+            if(optind == Argc)
+                return;
+            else 
+                continue;
         }
-        else {
-            switch (*++s) {
+
+
+
+        switch(c)
+        {
             case 'b':
-                origext = savestr(Argv[1]);
-                Argc--,Argv++;
+                origext = optarg;
+                // optind++;
+                // origext = savestr(Argv[1]);
+                // Argc--,Argv++;
                 break;
             case 'c':
                 diff_type = CONTEXT_DIFF;
                 break;
             case 'd':
-                if (chdir(Argv[1]) < 0)
-                    fatal("Can't cd to %s.\n",Argv[1]);
-                Argc--,Argv++;
+                if (chdir(optarg) < 0)
+                    fatal("Can't cd to %s.\n", optarg);
+                // optind++;
+                // if (chdir(Argv[1]) < 0)
+                    // fatal("Can't cd to %s.\n",Argv[1]);
+                // Argc--,Argv++;
                 break;
             case 'D':
                 do_defines++;
-                Sprintf(if_defined, "#ifdef %s\n", Argv[1]);
-                Sprintf(not_defined, "#ifndef %s\n", Argv[1]);
-                Sprintf(end_defined, "#endif %s\n", Argv[1]);
-                Argc--,Argv++;
+                Sprintf(if_defined, "#ifdef %s\n", optarg);
+                Sprintf(not_defined, "#ifndef %s \n", optarg);
+                Sprintf(end_defined, "#endif %s\n", optarg);
+                // optind++;
+                // Sprintf(if_defined, "#ifdef %s\n", Argv[1]);
+                // Sprintf(not_defined, "#ifndef %s\n", Argv[1]);
+                // Sprintf(end_defined, "#endif %s\n", Argv[1]);
+                // Argc--,Argv++;
                 break;
             case 'e':
                 diff_type = ED_DIFF;
@@ -1588,15 +1642,19 @@ void get_some_switches() {
                 diff_type = NORMAL_DIFF;
                 break;
             case 'o':
-                outname = savestr(Argv[1]);
-                Argc--,Argv++;
+                outname = savestr(optarg);
+                // optind++;
+                // outname = savestr(Argv[1]);
+                // Argc--,Argv++;
                 break;
             case 'p':
                 usepath = TRUE; /* do not strip path names */
                 break;
             case 'r':
-                Strcpy(rejname,Argv[1]);
-                Argc--,Argv++;
+                Strcpy(rejname,optarg);
+                // optind++;
+                // Strcpy(rejname,Argv[1]);
+                // Argc--,Argv++;
                 break;
             case 'R':
                 reverse = TRUE;
@@ -1604,15 +1662,98 @@ void get_some_switches() {
             case 's':
                 verbose = FALSE;
                 break;
+                /*
 #ifdef DEBUGGING
             case 'x':
-                debug = atoi(s+1);
+                debug = atoi(Argv[optind] + 2);
+                optind += 1;
+                // debug = atoi(s+1);
+                break;
+#else
+            case 'x':
+                break;
 #endif
+*/
             default:
-                fatal("Unrecognized switch: %s\n",Argv[0]);
-            }
+                fatal("Unrecognized switch: %s\n", c);
+
         }
-    }
+    };
+
+    // char *s = Argv[0];
+    // rejname[0] = '\0';
+    // if (!Argc)
+        // return;
+    // for (Argc--,Argv++; Argc; Argc--,Argv++) {
+        // s = Argv[0];
+        // if (strEQ(s,"+")) {
+            // return;                     /* + will be skipped by for loop */
+        // }
+        // if (*s != '-' || !s[1]) {
+            // if (filec == MAXFILEC)
+                // fatal("Too many file arguments.\n");
+            // filearg[filec++] = savestr(s);
+        // }
+        // else {
+            // switch (*++s) {
+            // case 'b':
+                // origext = savestr(Argv[1]);
+                // Argc--,Argv++;
+                // break;
+            // case 'c':
+                // diff_type = CONTEXT_DIFF;
+                // break;
+            // case 'd':
+                // if (chdir(Argv[1]) < 0)
+                    // fatal("Can't cd to %s.\n",Argv[1]);
+                // Argc--,Argv++;
+                // break;
+            // case 'D':
+                // do_defines++;
+                // Sprintf(if_defined, "#ifdef %s\n", Argv[1]);
+                // Sprintf(not_defined, "#ifndef %s\n", Argv[1]);
+                // Sprintf(end_defined, "#endif %s\n", Argv[1]);
+                // Argc--,Argv++;
+                // break;
+            // case 'e':
+                // diff_type = ED_DIFF;
+                // break;
+            // case 'l':
+                // canonicalize = TRUE;
+                // break;
+            // case 'n':
+                // diff_type = NORMAL_DIFF;
+                // break;
+            // case 'o':
+                // outname = savestr(Argv[1]);
+                // Argc--,Argv++;
+                // break;
+            // case 'p':
+                // usepath = TRUE; /* do not strip path names */
+                // break;
+            // case 'r':
+                // Strcpy(rejname,Argv[1]);
+                // Argc--,Argv++;
+                // break;
+            // case 'R':
+                // reverse = TRUE;
+                // break;
+            // case 's':
+                // verbose = FALSE;
+                // break;
+// #ifdef DEBUGGING
+            // case 'x':
+                // debug = atoi(s+1);
+                // break;
+// #else
+            // case 'x':
+                // break;
+// #endif
+            // default:
+                // fatal("Unrecognized switch: %s\n", s);
+            // }
+        // }
+    // }
 }
 
 void reinitialize_almost_everything() {
