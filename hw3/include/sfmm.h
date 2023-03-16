@@ -115,7 +115,7 @@ typedef struct sf_block {
 } sf_block;
 
 /*
- * The heap is designed to keep the payload area of each block aligned to a two-row (16-byte)
+ * The heap is designed to keep the payload area of each block aligned to a one-row (8-byte)
  * boundary.  The header of a block precedes the payload area, and is only single-row (8-byte)
  * aligned.  The first block of the heap starts as soon as possible after the beginning of the
  * heap, subject to the condition that its payload area is two-row aligned.
@@ -254,7 +254,7 @@ void sf_free(void *ptr);
  * @param align The alignment required of the returned pointer.
  * @param size The number of bytes requested to be allocated.
  *
- * @return If align is not a power of two or is less than the minimum block size,
+ * @return If align is not a power of two or is less than the default alignment (8),
  * then NULL is returned and sf_errno is set to EINVAL.
  * If size is 0, then NULL is returned without setting sf_errno.
  * Otherwise, if the allocation is successful a pointer to a valid region of memory
