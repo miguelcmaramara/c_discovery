@@ -145,8 +145,9 @@ int fitsInFreeList(long size, int i){
     if( i < 0) return 0;
     if(i == 0 && size == 32) return 2;
 
-    long min = (2 << (i-1)) * 32;
-    long max = (2 << (i)) * 32;
+    long min = (1 << (i-1)) * 32;
+    long max = (1 << (i)) * 32;
+    if(i == NUM_FREE_LISTS - 1 && size > min) return 2;
     if(size <= max){
         if(size > min)
             return 2;
@@ -168,7 +169,8 @@ sf_block *addToFreeList(sf_block *in){
     if(head == NULL){
         return NULL;
     }
-    updateBlock(in, getLength(in), 0b000);
+    // updateBlock(in, getLength(in), 0b000);
+    updateBlockFlags(in, 0, 0);
     in->body.links.next = head->body.links.next;
     in->body.links.prev = head;
     head->body.links.next->body.links.prev = in;
@@ -199,10 +201,12 @@ sf_block *coalesce(sf_block *in){
     // should never hit this
     if(next >= (sf_block *)sf_mem_end())
         return in;
+
     removeFromFreeList(in);
 
     // coalesce forward
     while(!isAlloc(next)){
+
         removeFromFreeList(next);
         createHeaderAndFooter(&(in->header), getLength(in) + getLength(next), getFlags(in));
         next = peerBlock(in, 1);
@@ -242,15 +246,19 @@ sf_block *addToQuickList(sf_block *in){
     if( i < 0 || i >= NUM_QUICK_LISTS)
         return NULL;
 
-    if(sf_quick_lists[i].length > QUICK_LIST_MAX){
+    if(sf_quick_lists[i].length >= QUICK_LIST_MAX){
         sf_block *curr = sf_quick_lists[i].first;
-        while(curr != NULL){
-            updateBlock(curr, getLength(curr), 0b000);
-            addToFreeList(coalesce(curr));
-        }
-
         sf_quick_lists[i].length = 0;
         sf_quick_lists[i].first = NULL;
+        while(curr != NULL){
+            // updateBlock(curr, getLength(curr), 0b000);
+            sf_block *placeholder= curr->body.links.next;
+            updateBlockFlags(curr, 0, 0);
+            // addToFreeList(coalesce(curr));
+            coalesce(curr);
+            curr = placeholder;
+        }
+
     }
 
     
@@ -258,15 +266,18 @@ sf_block *addToQuickList(sf_block *in){
     sf_quick_lists[i].length += 1;
     if(sf_quick_lists[i].first == NULL){
         sf_quick_lists[i].first = in;
+        in->body.links.next = NULL;
     }else{
-        sf_block* curr = sf_quick_lists[i].first;
-        while(curr->body.links.next != NULL){
-            curr = curr->body.links.next;
-        }
-        curr->body.links.next = in;
+        in->body.links.next = sf_quick_lists[i].first;
+        sf_quick_lists[i].first = in;
+        // sf_block* curr = sf_quick_lists[i].first;
+        // while(curr->body.links.next != NULL){
+            // curr = curr->body.links.next;
+        // }
+        // curr->body.links.next = in;
     }
+    // in->body.links.next = NULL;
 
-    in->body.links.next = NULL;
     updateBlockFlags(in, 1, 1);
 
 
@@ -278,14 +289,16 @@ sf_block *addToQuickList(sf_block *in){
  * splits the block into two parts, the first part of specified size
  */
 sf_block* splitBlock(sf_block* in, long size){
-    if(getLength(in) - size < 32) return NULL;  // first portion cannot be < 32
-    if(size < 32) return NULL;  // second portion cannot be < 32
+    if(getLength(in) - size < 32) return NULL;  // second portion cannot be < 32
     // if((getFlags(in) & THIS_BLOCK_ALLOCATED) != 0) return NULL; // must be free
     if((size & 0b111) != 0) return NULL; //must be 8-aligned
+    if(size < 32) return NULL;  // first portion cannot be < 32
+    // if(size < 32) size = 32;  // second portion cannot be < 32
 
     sf_block *res = offsetPtr(in, size);
     long prevSize = getLength(in);
-    if(isAlloc(in)){
+    // fprintf(stderr, "addr: %p, isAlloc %i\n", in, isAlloc(in));
+    if(!isAlloc(in)){
         removeFromFreeList(in);
         // create first portion header & footer
         createHeaderAndFooter(&(in->header), size, getFlags(in));
@@ -294,8 +307,13 @@ sf_block* splitBlock(sf_block* in, long size){
         createHeader(&(in->header), size, getFlags(in));
     }
     // create second portion header & footer
-    createHeaderAndFooter(&(res->header), prevSize - size, 0b000);
+    long newFlags = 
+        (isAlloc(in))
+        ? 0b010
+        : 0b000;
+    createHeaderAndFooter(&(res->header), prevSize - size, newFlags);
     addToFreeList(res);
+    // coalesce(res);
     return res;
 }
 
@@ -447,7 +465,6 @@ void *sf_malloc(size_t size) {
     // TO BE IMPLEMENTED
     // abort();
     sf_errno = ENOMEM;
-    fprintf(stderr, "TOOOOO BIG\n");
     return NULL;
 }
 
@@ -478,7 +495,8 @@ void sf_free(void *pp) {
         abort();
     sf_block* blockToFree = offsetPtr(pp, -8);
     if(addToQuickList(blockToFree) == NULL)
-        addToFreeList(blockToFree);
+        coalesce(blockToFree);
+        // addToFreeList(blockToFree);
 }
 
 void *sf_realloc(void *pp, size_t rsize) {
@@ -492,21 +510,33 @@ void *sf_realloc(void *pp, size_t rsize) {
         return NULL;
     }
 
+    if(rsize < 32) rsize = 32;
+    rsize = roundUpSize(rsize);
+
     sf_block* reAllocBlock = offsetPtr(pp, -8);
-    if(getLength(reAllocBlock) <= (long) rsize){
-        splitBlock(reAllocBlock, rsize);            // handles splintering
-        return reAllocBlock;
+
+    // fprintf(stderr, "realloc length %ld, rsize %ld\n", getLength(reAllocBlock), rsize);
+    // smaller size
+    if(getLength(reAllocBlock) >= (long) rsize){
+        sf_block * newlyFreed = splitBlock(reAllocBlock, rsize);    // handles splintering
+        if(newlyFreed != NULL)
+            coalesce(newlyFreed);
+        return offsetPtr(reAllocBlock, sizeof(sf_header));
     }
 
+    // larger size
     // Malloc
-    sf_block* resBlock = sf_malloc(rsize);
+    sf_block* resBlock = offsetPtr(sf_malloc(rsize), -1 * sizeof(sf_header));
     if(resBlock == NULL) return resBlock;
     //copy
     memcpy(
             offsetPtr(resBlock, sizeof(sf_header)),
             offsetPtr(reAllocBlock, sizeof(sf_header)),
             getLength(reAllocBlock) - 8);
-    updateBlock(resBlock, getLength(reAllocBlock), getFlags(reAllocBlock));
+    long newFlags = maskLong(getFlags(resBlock), 0b10, 0);
+    newFlags |= getFlags(reAllocBlock);
+    updateBlock(resBlock, getLength(resBlock), newFlags);
+    // updateBlockFlags(resBlock, , int thisBlockAllocated)
     //free
     sf_free(pp);
 
@@ -596,7 +626,8 @@ void *sf_memalign(size_t size, size_t align) {
         addToFreeList(origBlock);
         splitBlock(origBlock, (long)alignedMem - (long)origBlock - 8);
         removeFromFreeList(alignedBlock);
-        updateBlock(alignedBlock, getLength(alignedBlock), 0b001);
+        // updateBlock(alignedBlock, getLength(alignedBlock), 0b001);
+        updateBlockFlags(alignedBlock, 0, 1);
     }
 
     splitBlock(alignedBlock, size + 8);// attempt to split block
