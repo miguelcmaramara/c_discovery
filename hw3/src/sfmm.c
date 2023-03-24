@@ -92,7 +92,14 @@ sf_block* peerBlock(sf_block* in, int forward){
     long flags = getFlags(in);
     if((flags & PREV_BLOCK_ALLOCATED) == 0){
         sf_header *footer = offsetPtr(in, -1 * sizeof(size_t));
-        return offsetPtr(in, -1 * getHeaderLen(footer));
+        if((getHeaderFlags(footer) & THIS_BLOCK_ALLOCATED) == THIS_BLOCK_ALLOCATED)
+            return NULL;    // check for if block is allocated
+
+        sf_header *header = offsetPtr(in, -1 * getHeaderLen(footer));
+        if((long)header < (long)sf_mem_start()) return NULL;    //lower bound
+        if((long)header >= (long)sf_mem_end()) return NULL;     //lower bound
+        if(*header != *footer) return NULL; //header must match footer
+        return (sf_block*) header;
 
     } else
         // NOT IMPLEMENTED
@@ -270,17 +277,21 @@ sf_block *addToQuickList(sf_block *in){
 sf_block* splitBlock(sf_block* in, long size){
     if(getLength(in) - size < 32) return NULL;  // first portion cannot be < 32
     if(size < 32) return NULL;  // second portion cannot be < 32
-    if((getFlags(in) & THIS_BLOCK_ALLOCATED) != 0) return NULL; // must be free
+    // if((getFlags(in) & THIS_BLOCK_ALLOCATED) != 0) return NULL; // must be free
     if((size & 0b111) != 0) return NULL; //must be 8-aligned
 
-    removeFromFreeList(in);
     sf_block *res = offsetPtr(in, size);
     long prevSize = getLength(in);
-    // create first portion header & footer
-    createHeaderAndFooter(&(in->header), size, getFlags(in));
+    if(isAlloc(in)){
+        removeFromFreeList(in);
+        // create first portion header & footer
+        createHeaderAndFooter(&(in->header), size, getFlags(in));
+        addToFreeList(in);
+    } else {
+        createHeader(&(in->header), size, getFlags(in));
+    }
     // create second portion header & footer
     createHeaderAndFooter(&(res->header), prevSize - size, 0b000);
-    addToFreeList(in);
     addToFreeList(res);
     return res;
 }
@@ -437,14 +448,66 @@ void *sf_malloc(size_t size) {
     return NULL;
 }
 
+int validBlock(sf_block *in){
+    if(in == NULL) return 0;                            // NULLPTR
+    if(maskPtr(in, 0b111, 0) != 0) return 0;            // pointer not align
+    if(getLength(in) < 32) return 0;                    // min size
+    if(maskLong(getLength(in), 0b111, 0) !=0) return 0; // size algin
+    if(in < (sf_block*)sf_mem_start()) return 0;        // low & up mem bound
+    if((long)offsetPtr(in, getLength(in)) > (long)sf_mem_end()) return 0;
+    if(!isAlloc(in)) return 0;                          // must be alloc
+    if(inQuickLst(in)) return 0;                        // cant be in quicklst
+
+    if(!prevAlloc(in) && peerBlock(in, 0) == NULL)      // verify prevAlloc
+        return 0;
+    return 1;
+}
+
+int validFreePtr(void* in){
+    if(in == NULL) return 0;
+    if((long)in <= (long)sf_mem_start()) return 0;      // low mem 
+    if(maskPtr(in, 0b111, 0) != 0) return 0;            // pointer not align
+    return validBlock(offsetPtr(in, -1*sizeof(sf_header*)));
+}
+
 void sf_free(void *pp) {
-    // TO BE IMPLEMENTED
-    abort();
+    if(!validFreePtr(pp))
+        abort();
+    sf_block* blockToFree = offsetPtr(pp, -8);
+    if(addToQuickList(blockToFree) == NULL)
+        addToFreeList(blockToFree);
 }
 
 void *sf_realloc(void *pp, size_t rsize) {
-    // TO BE IMPLEMENTED
-    abort();
+    if(!validFreePtr(pp)){
+        sf_errno = EINVAL;
+        return NULL;
+    }
+
+    if(rsize == 0){
+        sf_free(pp);
+        return NULL;
+    }
+
+    sf_block* reAllocBlock = offsetPtr(pp, -8);
+    if(getLength(reAllocBlock) <= (long) rsize){
+        splitBlock(reAllocBlock, rsize);            // handles splintering
+        return reAllocBlock;
+    }
+
+    // Malloc
+    sf_block* resBlock = sf_malloc(rsize);
+    if(resBlock == NULL) return resBlock;
+    //copy
+    memcpy(
+            offsetPtr(resBlock, sizeof(sf_header)),
+            offsetPtr(reAllocBlock, sizeof(sf_header)),
+            getLength(reAllocBlock) - 8);
+    updateBlock(resBlock, getLength(reAllocBlock), getFlags(reAllocBlock));
+    //free
+    sf_free(pp);
+
+    return offsetPtr(resBlock, sizeof(sf_header));
 }
 
 void *sf_memalign(size_t size, size_t align) {
