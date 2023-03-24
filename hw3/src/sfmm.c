@@ -156,6 +156,9 @@ int fitsInFreeList(long size, int i){
 
 }
 
+/*
+ * also modifies flags
+ */
 sf_block *addToFreeList(sf_block *in){
     sf_block *head = NULL;
     for (int i = 0; i < NUM_FREE_LISTS; i++){
@@ -165,6 +168,7 @@ sf_block *addToFreeList(sf_block *in){
     if(head == NULL){
         return NULL;
     }
+    updateBlock(in, getLength(in), 0b000);
     in->body.links.next = head->body.links.next;
     in->body.links.prev = head;
     head->body.links.next->body.links.prev = in;
@@ -238,7 +242,6 @@ sf_block *addToQuickList(sf_block *in){
     if( i < 0 || i >= NUM_QUICK_LISTS)
         return NULL;
 
-    // TODO: CHECK FOR COALESCE
     if(sf_quick_lists[i].length > QUICK_LIST_MAX){
         sf_block *curr = sf_quick_lists[i].first;
         while(curr != NULL){
@@ -372,27 +375,27 @@ void *sf_malloc(size_t size) {
 
     // initialize heap
     if(sf_mem_start() == sf_mem_end()){
-        sf_block* freeBlock =
+        // sf_block* freeBlock =
         initHeap();
         
         // sf_show_heap();
         // sf_block* q2 = splitBlock(freeBlock, 4056/2 - ((4056/2)%8));
         // sf_show_heap();
 
-        /*sf_block* q1 = */splitBlock(freeBlock, 56);
+        // /*sf_block* q1 = */splitBlock(freeBlock, 56);
         // splitBlock(freeBlock, 32);
         // splitBlock(q2, 184);
 
         // sf_show_heap();
-        removeFromFreeList(freeBlock);
-        addToQuickList(freeBlock);
+        // removeFromFreeList(freeBlock);
+        // addToQuickList(freeBlock);
         // sf_show_heap();
         // addToQuickList(q1);
         // addToQuickList(q2);
     }
 
-    size_t test = 85912;
-    size = roundUpSize(test); // switch to size later on
+    // size_t test = 85912;
+    size = roundUpSize(size); // switch to size later on
     size_t blockSize =  // round up to minimum block size
         size + sizeof(size_t) < sizeof(size_t) * 2 + sizeof(sf_block*) * 2
         ? sizeof(size_t) * 2 + sizeof(sf_block*) * 2
@@ -510,7 +513,93 @@ void *sf_realloc(void *pp, size_t rsize) {
     return offsetPtr(resBlock, sizeof(sf_header));
 }
 
+
+int isAligned(void *ptr, size_t align){
+    long mask = 1;
+    for(long i = 0; i <sizeof(size_t) * 8; i++){
+        if(align >>i == 1) break;
+        mask = (mask << 1) | 1;
+    }
+
+    if(maskLong((long) ptr, mask, 1) == 0) return 1;
+    return 0;
+}
+
+void *alignUp(void *ptr, size_t align){
+    long mask = 1;
+    for(long i = 0; i <sizeof(size_t) * 8; i++){
+        if(align >>i == 1) break;
+        mask = (mask << 1) | 1;
+    }
+
+    if(isAligned(ptr, align)) return ptr;
+    // if(maskLong((long) ptr, mask, 1) == 0) return ptr*;
+    return offsetPtr(ptr, maskLong(~(long)ptr, mask, 0) + 1);
+}
+
+// void fitsMemAlign(sf_block *in, size_t size, size_t align){
+    // sf_block *headerPtr = in;
+    // sf_block *nextBlockPtr = peerBlock(in, 1);
+    // void *dataPtr = offsetPtr(headerPtr, sizeof(sf_header));
+    // void *alignedDataPtr = offsetPtr(headerPtr, sizeof(sf_header));
+
+// }
+
+
 void *sf_memalign(size_t size, size_t align) {
-    // TO BE IMPLEMENTED
-    abort();
+    if(align < 8  || ((align & (align - 1))  == 0 )){
+        sf_errno = EINVAL;
+        return NULL;
+    }
+
+    size = roundUpSize(size); // switch to size later on
+    size = (size < 24) ? 24 : size;
+    // requested size
+    // allignment size
+    // minimum block size
+    // size for block header and fitter
+
+    // 8 aligned:
+    // |h|y|y| can put anywhere
+    
+    // 16 aligned: 2 cases:
+    // |h|y|-|-|-|-|-|
+    // |X|X|X|X|h|y|-|
+    // |X|X|X|X|X|h|y|
+    //
+    // 32 aligned: 4 cases:
+    // |h|y|-|-|-|-|-|-|-|-|-|-|
+    // |X|h|y|-|-|-|-|-|-|-|-|-| NO
+    // |X|X|h|y|-|-|-|-|-|-|-|-| NO
+    // |X|X|X|h|y|-|-|-|-|-|-|-| NO
+    
+    // |X|X|X|X|h|y|-|-|-|-|-|-| 
+    // |X|X|X|X|X|h|y|-|-|-|-|-|
+    // |X|X|X|X|X|X|h|y|-|-|-|-|
+    // |X|X|X|X|X|X|X|h|y|-|-| -|
+    //
+    // 64 aligned: 8 cases:
+    // spaces req = 32 + align + max(8-aligned-size, 24)
+
+    long blockSize = 32 + (long) align + size;
+    void* initMem = malloc(blockSize);
+    sf_block *origBlock =  offsetPtr(initMem, -8);
+
+    void *alignedMem =
+        isAligned(initMem, align)
+        ? initMem
+        : alignUp(offsetPtr(initMem, 24), align);
+
+    sf_block * alignedBlock = offsetPtr(alignedMem, -8);
+    if(initMem != alignedMem){
+        // Free initial portion
+        addToFreeList(origBlock);
+        splitBlock(origBlock, (long)alignedMem - (long)origBlock - 8);
+        removeFromFreeList(alignedBlock);
+        updateBlock(alignedBlock, getLength(alignedBlock), 0b001);
+    }
+
+    splitBlock(alignedBlock, size + 8);// attempt to split block
+ 
+    return alignedMem;
 }
