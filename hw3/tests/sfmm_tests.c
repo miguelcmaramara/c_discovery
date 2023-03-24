@@ -1,6 +1,8 @@
 #include <criterion/criterion.h>
+#include <criterion/internal/assert.h>
 #include <errno.h>
 #include <signal.h>
+#include <stdlib.h>
 #include "debug.h"
 #include "sfmm.h"
 #define TEST_TIMEOUT 15
@@ -242,5 +244,133 @@ Test(sfmm_basecode_suite, realloc_smaller_block_free_block, .timeout = TEST_TIME
 //DO NOT DELETE THESE COMMENTS
 //############################################
 
-//Test(sfmm_student_suite, student_test_1, .timeout = TEST_TIMEOUT) {
-//}
+Test(sfmm_student_suite, student_test_1_memalign, .timeout = TEST_TIMEOUT) {
+	sf_errno = 0;
+    size_t sz_x = sizeof(double);
+	void *x1 = sf_memalign(sz_x, 8);
+	void *x2 = sf_memalign(sz_x, 16);
+	void *x3 = sf_memalign(sz_x, 64);
+	// void *x4 = sf_memalign(sz_x, 65);
+	// void *y = sf_realloc(x, sz_y);
+
+	cr_assert_not_null(x1, "x1 is NULL!");
+	cr_assert_not_null(x2, "x2 is NULL!");
+	cr_assert_not_null(x3, "x3 is NULL!");
+	// cr_assert_null(x4, "x3 is NOT NULL!");
+
+
+    cr_assert(((long)x1 & 7) == 0 , "x1 is not aligned to 8!");
+	sf_block *x1b = (sf_block *)((char *)x1 - sizeof(sf_header));
+	cr_assert(x1b->header & THIS_BLOCK_ALLOCATED, "x2 Allocated bit is not set!");
+	cr_assert((x1b->header & ~0x7) == 32, "Realloc'ed block size not what was expected!");
+
+    cr_assert(((long)x2 & 15) == 0 , "x2 is not aligned to 16!");
+	sf_block *x2b = (sf_block *)((char *)x2 - sizeof(sf_header));
+	cr_assert(x2b->header & THIS_BLOCK_ALLOCATED, "x2 Allocated bit is not set!");
+	cr_assert((x2b->header & ~0x7) >= 32, "x2 Size is too small");
+	cr_assert((x2b->header & ~0x7) < 64, "x2 Size is too large");
+
+    cr_assert(((long)x3 & 63) == 0 , "x3 is not aligned to 64!");
+	sf_block *x3b = (sf_block *)((char *)x3 - sizeof(sf_header));
+	cr_assert(x3b->header & THIS_BLOCK_ALLOCATED, "x3 Allocated bit is not set!");
+	cr_assert((x3b->header & ~0x7) >= 32, "x3 Size is too small");
+	cr_assert((x3b->header & ~0x7) < 64, "x3 Size is too large");
+
+    assert_quick_list_block_count(0, 0);	
+    cr_assert(sf_errno == 0, "sf_errno CHANGED");
+}
+
+Test(sfmm_student_suite, student_test_2_bad_memalign, .timeout = TEST_TIMEOUT) {
+    size_t sz_x = sizeof(double);
+    double *init = sf_malloc(sz_x);
+    *init = 0;
+
+    
+	sf_errno = 0;
+	void *x1 = sf_memalign(sz_x, -1);
+    cr_assert(sf_errno == EINVAL, "x1: sf_errno is not EINVAL");
+    cr_assert_null(x1, "x1 is NOT NULL!");
+
+	sf_errno = 0;
+	void *x2 = sf_memalign(sz_x, 7);
+    cr_assert(sf_errno == EINVAL, "x2: sf_errno is not EINVAL");
+    cr_assert_null(x2, "x2 is NOT NULL!");
+
+	sf_errno = 0;
+	void *x3 = sf_memalign(sz_x, 67);
+    cr_assert(sf_errno == EINVAL, "x3: sf_errno is not EINVAL");
+    cr_assert_null(x3, "x3 is NOT NULL!");
+
+
+    assert_quick_list_block_count(0, 0);	
+    assert_free_block_count(0, 1);  
+}
+
+Test(sfmm_student_suite, student_test_3_out_of_order, .timeout = TEST_TIMEOUT) {
+	sf_errno = 0;
+    double *ptrs[10];
+    for( int i = 0; i < 10; i++){
+        ptrs[i] = sf_malloc(sizeof(double));
+        *ptrs[i] = 320320320e-320;
+    }
+
+    sf_free(ptrs[1]);
+    sf_free(ptrs[2]);
+    sf_free(ptrs[4]);
+    sf_free(ptrs[5]);
+    sf_free(ptrs[6]);
+    sf_free(ptrs[8]);
+
+
+	assert_quick_list_block_count(0, 1);	
+	assert_free_block_count(0, 3);  
+    assert_free_block_count(32 * 2, 1);
+    assert_free_block_count(32 * 3, 1);
+}
+
+Test(sfmm_student_suite, student_test_4_bad_reAlloc, .timeout = TEST_TIMEOUT) {
+    size_t sz1 = sizeof(double);
+    size_t sz2 = sizeof(double);
+    double *init = sf_malloc(sz1);
+    *init = 0;
+
+    
+	sf_errno = 0;
+	void *x1 =  sf_realloc(sf_mem_start(), sz2);
+    cr_assert(sf_errno == EINVAL, "x1: sf_errno is not EINVAL");
+    cr_assert_null(x1, "x1 is NOT NULL!");
+
+	sf_errno = 0;
+	void *x2 =  sf_realloc(sf_mem_end(), sz2);
+    cr_assert(sf_errno == EINVAL, "x2: sf_errno is not EINVAL");
+    cr_assert_null(x2, "x2 is NOT NULL!");
+
+	sf_errno = 0;
+	void *x3 = sf_realloc((void*)((long)init + 1), sz2);
+    cr_assert(sf_errno == EINVAL, "x3: sf_errno is not EINVAL");
+    cr_assert_null(x3, "x3 is NOT NULL!");
+
+
+    assert_quick_list_block_count(0, 0);	
+    assert_free_block_count(0, 1);  
+}
+
+Test(sfmm_student_suite, student_test_5_reAlloc_contents, .timeout = TEST_TIMEOUT) {
+	sf_errno = 0;
+    size_t sz1 = sizeof(double) * 20;
+    size_t sz2 = sizeof(double) * 40;
+    double *arr = sf_malloc(sz1);
+
+    for(int i = 0; i < 20; i++)
+        arr[i] = i;
+
+
+    arr = sf_realloc(arr, sz2);
+    
+
+    for(int i = 0; i < 20; i++)
+        cr_assert(arr[i] == i, "MEM DIFFERS AT INDEX %d", i);
+
+    assert_quick_list_block_count(0, 1);	
+    assert_free_block_count(0, 1);  
+}

@@ -577,12 +577,15 @@ void *alignUp(void *ptr, size_t align){
 
 
 void *sf_memalign(size_t size, size_t align) {
-    if(align < 8  || ((align & (align - 1))  == 0 )){
+
+    // fprintf(stderr, "HERE\n");
+    if(align < 8  || ((align & (align - 1))  != 0 )){
+        // fprintf(stderr, "HERE2\n");
         sf_errno = EINVAL;
         return NULL;
     }
 
-    size = roundUpSize(size); // switch to size later on
+    size = roundUpSize(size);
     size = (size < 24) ? 24 : size;
     // requested size
     // allignment size
@@ -593,9 +596,9 @@ void *sf_memalign(size_t size, size_t align) {
     // |h|y|y| can put anywhere
     
     // 16 aligned: 2 cases:
-    // |h|y|-|-|-|-|-|
-    // |X|X|X|X|h|y|-|
-    // |X|X|X|X|X|h|y|
+    // |h|y|-|-|-|-|-|-|-|
+    // |X|X|X|X|h|y|-|-|-|
+    // |X|X|X|X|X|h|y|-|-|
     //
     // 32 aligned: 4 cases:
     // |h|y|-|-|-|-|-|-|-|-|-|-|
@@ -612,7 +615,12 @@ void *sf_memalign(size_t size, size_t align) {
     // spaces req = 32 + align + max(8-aligned-size, 24)
 
     long blockSize = 32 + (long) align + size;
-    void* initMem = malloc(blockSize);
+    if(align == 8) {
+        blockSize = size;
+        return sf_malloc(blockSize);
+    }
+        
+    void* initMem = sf_malloc(blockSize);
     sf_block *origBlock =  offsetPtr(initMem, -8);
 
     void *alignedMem =
@@ -621,16 +629,23 @@ void *sf_memalign(size_t size, size_t align) {
         : alignUp(offsetPtr(initMem, 24), align);
 
     sf_block * alignedBlock = offsetPtr(alignedMem, -8);
+    // if it doesn't line up
     if(initMem != alignedMem){
         // Free initial portion
         addToFreeList(origBlock);
+        // fprintf(stderr, "HERE\n");
         splitBlock(origBlock, (long)alignedMem - (long)origBlock - 8);
         removeFromFreeList(alignedBlock);
         // updateBlock(alignedBlock, getLength(alignedBlock), 0b001);
         updateBlockFlags(alignedBlock, 0, 1);
+        coalesce(origBlock);
     }
 
-    splitBlock(alignedBlock, size + 8);// attempt to split block
+    sf_block* remainder = splitBlock(alignedBlock, size + 8);// attempt to split block
+    if(remainder !=NULL){
+        coalesce(remainder);
+    }
+    
  
     return alignedMem;
 }
