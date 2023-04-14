@@ -6,6 +6,14 @@
 #include "debug.h"
 
 WATCHER *bitstamp_watcher_start(WATCHER_TYPE *type, char *args[]) {
+    for(int i = 0; i < 3; i++){
+        printf("  bitstamp arg %d: %s\n", i, args[i]);
+    }
+    // WATCHER *wp = newWatcher();
+    // wp->type = BITSTAMP_WATCHER_TYPE;
+    // cwatcher->pid = -1;
+    // cwatcher->fileIn = stdin;
+    // cwatcher->fileOut = stdout;
     // TO BE IMPLEMENTED
     abort();
 }

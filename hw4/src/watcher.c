@@ -1,6 +1,8 @@
 #include <signal.h>
 #include <stdio.h>
+#include <strings.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "ticker.h"
 #include "watcher.h"
@@ -51,15 +53,16 @@ struct watcher *newWatcher(){
     struct watcher *res = blankWatcher();
 
     int i = 0;
-    // printf("c1\n");
+    // 
     while(watchPtr->next != NULL){
+        // wid matches position, don't add watcher here
         if(watchPtr->wid == i){
             watchPtr = watchPtr->next;
             i++;
             continue;
         }
 
-        // printf("c2\n");
+        // wid does not match index, add watcher here
         res->prev = watchPtr;
         res->next = watchPtr->next;
         watchPtr->next = res;
@@ -68,7 +71,7 @@ struct watcher *newWatcher(){
         i++;
         return res;
     }
-    // printf("c3\n");
+    // add watcher onto the end
     res->prev = watchPtr;
     res->next = NULL;
     watchPtr->next = res;
@@ -111,7 +114,6 @@ int printWatchers(){
     struct watcher *watchPtr = watcherLstHead.next;
     printf("WATCHERS DELETE ME LATER:\n");
     while(watchPtr != NULL){
-        printf("attempting to print: %p\n", watchPtr);
         printWatcher(watchPtr);
         watchPtr = watchPtr->next;
     }
@@ -123,36 +125,81 @@ int printWatcher(struct watcher *watchPtr){
         printf("null watchPtr\n");
         return 0;
     }
+    char* res;
+    watcherString(&res, watchPtr);
     // fprintf(stdout,"here: ptr, %p\n", watchPtr);
+    free(res);
+    return 0;
+}
 
-    if(watchPtr->type == CLI_WATCHER_TYPE)
-        printf("%d	CLI(%d,%d,%d)\n",
+int watcherString(char ** strPtrPtr, struct watcher *watchPtr){
+    int num;
+    if(watchPtr->type == CLI_WATCHER_TYPE){
+        num = asprintf(strPtrPtr, 
+                "%d	CLI(%d,%d,%d)\n",
                 watchPtr->wid,
                 -1,
                 0,
                 1
                 );
-    else if(watchPtr->type == BITSTAMP_WATCHER_TYPE)
-        printf("%d	bitstamp.net(%d,%d,%d)\n",
+    }else if(watchPtr->type == BITSTAMP_WATCHER_TYPE)
+        num = asprintf(strPtrPtr, 
+                "%d	bitstamp.net(%d,%d,%d)\n",
                 watchPtr->wid,
                 watchPtr->pid,
                 fileno(watchPtr->fileIn),
                 fileno(watchPtr->fileOut)
                 );
     else if(watchPtr->type == BLOCKCHAIN_WATCHER_TYPE)
-        printf("%d	blockchain.net(%d,%d,%d)\n",
+        num = asprintf(strPtrPtr, 
+                "%d	blockchain.net(%d,%d,%d)\n",
                 watchPtr->wid,
                 watchPtr->pid,
                 fileno(watchPtr->fileIn),
                 fileno(watchPtr->fileOut)
                 );
     else
-        printf("%d	unclassified_watcher(%d,%d,%d)\n",
+        num = asprintf(strPtrPtr, 
+                "%d	unclassified_watcher(%d,%d,%d)\n",
                 watchPtr->wid,
                 watchPtr->pid,
                 fileno(watchPtr->fileIn),
                 fileno(watchPtr->fileOut)
                 );
+    return num;
+}
+
+int watchersString(char ** str){
+    struct watcher *watchPtr = watcherLstHead.next;
+    // char * temp;
+    int len = watcherString(str, watchPtr);
+    watchPtr = watchPtr->next;
+        
+
+    // printf("WATCHERS DELETE ME LATER:\n");
+    while(watchPtr != NULL){
+        char * temp;
+        len += watcherString(&temp, watchPtr);
+        asprintf(str, "%s%s", *str, temp);
+        // printWatcher(watchPtr);
+        watchPtr = watchPtr->next;
+        free(temp);
+    }
+    return len;
+}
+
+int printTrace(struct watcher *wp, char *txt){
+    struct timespec tp;
+    clock_gettime(CLOCK_REALTIME, &tp);
+    fprintf(stderr, 
+            "[%ld.%ld][%s][ %d][   %d]: '%s'\n",
+            tp.tv_sec,
+            tp.tv_nsec / 1000,
+            wp->typ->name,
+            fileno(wp->fileIn),
+            wp->serNum,
+            txt
+            );
     return 0;
 }
 // int initwatcherLstHead(){
