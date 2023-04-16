@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <strings.h>
 #include <stdlib.h>
 #include <time.h>
@@ -12,22 +13,39 @@
 
 struct watcher watcherLstHead;
 
+char* tempCpy(char * str){
+    char* temp = malloc(sizeof(char*) *strlen(str));
+    strcpy(temp, str);
+    return temp;
+}
+
 int join(char ** str, char delim,  char **args){
     if(args == NULL)
         return -1;
     if(*args == 0)
         return -1;
+    char * old = *str;
+    // char buf[500];
+    // for(int i = 0; i < 500; i++)
+        // buf[i] = 0;
+    // strcpy(buf, *str);
     int res = asprintf(str, "%s", *args);
     while(*(++args) != NULL){
         res += asprintf(str, "%s%c%s", *str, delim, *args);
+        free(old);
+        old = *str;
     }
+    // free(old);
     return res;
 }
 
 int removeWatcher(struct watcher * watcherPtr){
-    if(watcherPtr->typ != &watcher_types[CLI_WATCHER_TYPE])
+    if(watcherPtr->typ != &watcher_types[CLI_WATCHER_TYPE]){
         kill(watcherPtr->pid, SIGTERM);
-    cleanWatcher(watcherPtr);
+        // watcherPtr->pid *=  -1;
+    }
+        
+    // cleanWatcher(watcherPtr);
     return 1;
 }
 
@@ -36,14 +54,21 @@ int cleanWatcher(struct watcher * wp){
         return 0;
     wp->prev->next = wp->next;
     if(wp->next != NULL)
-        wp->prev = NULL;
+        // wp->prev = NULL;
+        wp->next->prev = wp->prev;
 
-    char **temp = wp->args;
-    while(temp != NULL){
-        char ** next = temp++;
-        free(*temp);
-        temp = next;
-    }
+    // char **temp = wp->args;
+    // printf(" args: %s\n", wp->args);
+    if(wp->args != NULL)
+        for(int i = 0; wp->args[i]; i++){
+            free(wp->args[i]);
+        }
+    // while(*temp != NULL){
+        // char ** next = temp++;
+        // printf(" freeing args %s\n", *temp);
+        // free(*temp);
+        // temp = next;
+    // }
 
     close(wp->fdIn);
     close(wp->fdOut);
@@ -53,12 +78,24 @@ int cleanWatcher(struct watcher * wp){
     return 1;
 }
 
+int purgeWatcher(struct watcher *wp){
+    if(wp->typ != &watcher_types[CLI_WATCHER_TYPE]){
+        kill(wp->pid, SIGTERM);
+        // watcherPtr->pid *=  -1;
+    } else {
+        cleanWatcher(wp);
+    }
+        
+
+    return 1;
+}
+
 int removeAllWatchers(){
     struct watcher *wp = watcherLstHead.next;
 
     while(wp != NULL){
         struct watcher *temp = wp->next;
-        removeWatcher(wp);
+        purgeWatcher(wp);
         wp = temp;
     }
     return 1;
@@ -94,20 +131,14 @@ struct watcher *newWatcher(){
     while(watchPtr != NULL){
         // wid matches position, don't add watcher here
         if(watchPtr->wid != i){
-    // printf("skip %p ->%p\n", watchPtr, watchPtr->next);
-            // printf("watcherPtr %p, wid %d, name %s, i%d\n", watchPtr, watchPtr->wid, watchPtr->typ->name, i);
-            // watchPtr = watchPtr->next;
-            // i++;
             break;
         }
         prevWatch = watchPtr;
         watchPtr = watchPtr->next;
 
         i++;
-        // printf("watcherPtr %p, wid %d, name %s, i%d\n", watchPtr, watchPtr->wid, watchPtr->typ->name, i);
 
     }
-    // wid does not match index, add watcher here
     res->prev = prevWatch;
     res->next = prevWatch->next;
     if(prevWatch->next != NULL)
@@ -116,13 +147,6 @@ struct watcher *newWatcher(){
     res->wid = i;
     i++;
     return res;
-    // return NULL;
-    // add watcher onto the end
-    // res->prev = watchPtr;
-    // res->next = NULL;
-    // watchPtr->next = res;
-    // res->wid = i;
-    // return res;
 
 }
 
@@ -171,7 +195,6 @@ struct watcher *getWatcherByPid(int i){
 
 int printWatchers(){
     struct watcher *watchPtr = watcherLstHead.next;
-    printf("WATCHERS DELETE ME LATER:\n");
     while(watchPtr != NULL){
         printWatcher(watchPtr);
         watchPtr = watchPtr->next;
@@ -181,7 +204,7 @@ int printWatchers(){
 
 int printWatcher(struct watcher *watchPtr){
     if(watchPtr == NULL){
-        printf("null watchPtr\n");
+        // printf("null watchPtr\n");
         return 0;
     }
     char* res;
@@ -202,6 +225,9 @@ int watcherString(char ** strPtrPtr, struct watcher *watchPtr){
 
     // if(*strPtrPtr != NULL)
         // free(*strPtrPtr);
+    // char* temp;
+
+    char * old;
     int num = asprintf(strPtrPtr, 
                 "%d	%s(%d,%d,%d)",
                 watchPtr->wid,
@@ -211,22 +237,39 @@ int watcherString(char ** strPtrPtr, struct watcher *watchPtr){
                 watchPtr->fdOut
                 );
     if(typeArgs != NULL){
+        // char* temp = malloc(sizeof(char*) *strlen(*strPtrPtr));
+        // strcpy(temp, *strPtrPtr);
+        old = *strPtrPtr;
         num += asprintf(strPtrPtr,
                 "%s %s",
                 *strPtrPtr,
                 typeArgs
                 );
+        free(old);
+        // free(temp);
         free(typeArgs);
     } if(userArgs != NULL){
+        old = *strPtrPtr;
         num += asprintf(strPtrPtr,
                 "%s [%s]",
                 *strPtrPtr,
                 userArgs
                 );
+        free(old);
         free(userArgs);
     }
 
-    num += asprintf(strPtrPtr, "%s\n", *strPtrPtr);
+    // char * temp = tempCpy(*strPtrPtr);
+    char buf[500];
+    for(int i = 0; i < 500; i++)
+        buf[i] = 0;
+    strcpy(buf, *strPtrPtr);
+    // old = *strPtrPtr;
+    free(*strPtrPtr);
+    num += asprintf(strPtrPtr, "%s\n", buf);
+    // printf("   OLD: |%s|\n", buf);
+    // printf("   NEW: |%s|\n", *strPtrPtr);
+    // free(temp);
     return num;
     /*
     if(watchPtr->type == CLI_WATCHER_TYPE){
@@ -277,13 +320,14 @@ int watchersString(char ** str){
     watchPtr = watchPtr->next;
         
 
-    printf("WATCHERS DELETE ME LATER:\n");
     while(watchPtr != NULL){
         char * temp;
         len += watcherString(&temp, watchPtr);
-        asprintf(str, "%s%s", *str, temp);
+        char *temp2 = tempCpy(*str);
+        asprintf(str, "%s%s", temp2, temp);
         // printWatcher(watchPtr);
         watchPtr = watchPtr->next;
+        free(temp2);
         free(temp);
     }
     return len;

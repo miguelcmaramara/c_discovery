@@ -41,7 +41,7 @@ pid_t parentId;
 
 // sigint handler
 void sigintHandler(int sig){
-    printf("Keyboard interupt detected: Terminating Program down.%d\n", sig);
+    printf("\nKeyboard interupt detected: Quitting program\n");
     removeAllWatchers();
     // todo: create teardown process
     // todo: remove watchers from memory
@@ -51,8 +51,19 @@ void sigintHandler(int sig){
 }
 
 // sigchld handler
-void sigchldHandler(int sig){
-    printf("\nChild process was stopped with signal %d\n", sig);
+void sigchldHandler(int sig, siginfo_t *info, void *context){
+    // printf("\nChild process was stopped with signal %d\n child process ended %d", sig, info->si_pid);
+
+    int status;
+    WATCHER *wp = watcherLstHead.next->next;
+    while(wp != NULL){
+        if(waitpid(wp->pid, &status, WNOHANG)){
+            // printf("cleaning up wp %p, name %s\n", wp, wp->typ->name);
+            cleanWatcher(wp);
+        }
+        wp = wp->next;
+    }
+    return;
 
     // wait
     
@@ -63,7 +74,7 @@ void sigchldHandler(int sig){
 
 // sigKillTerm handler
 void sigKillTermHandler(int sig){
-    printf("\nProcess killed(%d) / terminted with signal %d: terminating program.\n", SIGKILL, sig);
+    printf("\nProcess killed, Quitting program.\n");
     removeAllWatchers();
     exit(0);
 }
@@ -83,7 +94,8 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
         // int numRead = read(info->si_fd, buff, INPUT_BUFFER_SIZE);
         int numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
         int totalRead = 0;
-        char *message = malloc(1);
+        // char *message = malloc(1);
+        char *message = NULL;
 
         if(numRead == 0){
             wp = wp->next;
@@ -97,10 +109,8 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
                 numRead--;
             }
             // process buffer
-            // printf("    read from file: %s, size: %d\n", buff, numRead);
             message = realloc(message, totalRead + numRead);
             memcpy(message + totalRead, buff, numRead);
-            // printf("    total message: %s\n", message);
             totalRead += numRead;
 
 
@@ -113,14 +123,12 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
             numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
         } 
 
-        // add endline
-        if(message[totalRead - 1] != 0){
-            message = realloc(message, totalRead + 1);
-            message[totalRead] = 0;
-        }
-
-
         if(totalRead > 0){
+            // add endline
+            if(message[totalRead - 1] != 0){
+                message = realloc(message, totalRead + 1);
+                message[totalRead] = 0;
+            }
 
             if(wp->typ == &watcher_types[CLI_WATCHER_TYPE])
                 shouldReprint = 1;
@@ -132,10 +140,10 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
             watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
             // cli_watcher_send(WATCHER *wp, void *msg)
         } else {
-            printf("MESSAGE RECIEVED IN HANDLER %s\n", message);
         }
         */
-        free(message);
+        if(message != NULL)
+            free(message);
         wp = wp->next;
     }
 
@@ -200,7 +208,7 @@ int initTicker(){
 
     // sigchld Handler
     sigchldAction.sa_flags = SIGCHLD;
-    sigchldAction.sa_handler = sigchldHandler;
+    sigchldAction.sa_sigaction = sigchldHandler;
     if(sigaction(SIGCHLD, &sigchldAction, NULL) == -1){
         fprintf(stderr, "FAILED TO ATTACH SIGCHLD HANDLER");
         return 1;
@@ -261,33 +269,6 @@ int initCliWatcher(){
 
 
 
-/*
-void testExecvp(){
-    // abort();
-    printf("before\n");
-    // char *args[] = {"uwsc", "wss://ws.bitstamp.net", NULL};
-    // char *args[] = {"ls", NULL};
-    // pid_t p = fork();
-    //child
-    // if(p == 0){
-        // printf("p before p2: %d\n", p);
-        
-        // pid_t p2 = fork();
-        // if(p2 == 0){
-            // printf("CHILD2: p2 %d\n", p2);
-            // printf("CHILD2: p after p2 %d\n", p);
-        // } else {
-        // }
-        // pid_t p3 = fork();
-        // if(p3 == 0)p           printf("p3 %d\n", p3);
-            // printf("CHILD3: p2 after p2: %d\n", p2);
-            // printf("CHILD3: p after p3: %d\n", p3);
-        // }
-    // }
-        
-   
-}*/
-
 
 
 int ticker(void) {
@@ -303,7 +284,6 @@ int ticker(void) {
             watcher_types[CLI_WATCHER_TYPE].send(cli_watcher, "ticker> ");
             shouldReprint = 0;
         }
-        // printf("ticker> ");
         fflush(stdout);
         sigsuspend(&setMask);
         if(getpid() != parentId){

@@ -19,7 +19,6 @@ WATCHER *bitstamp_watcher_start(WATCHER_TYPE *type, char *args[]) {
     int sz = 1;
     // don't forget to free these
     for(int i = 2; args[i] != NULL; i++){
-        // printf("  bitstamp arg %d: %s\n", i, args[i]);
         char *temp;
         asprintf(&temp, "%s", args[i]);
         *(wArgs + sz - 1) = temp;
@@ -60,7 +59,6 @@ WATCHER *bitstamp_watcher_start(WATCHER_TYPE *type, char *args[]) {
     if(msPid == 0){
         close(fdc2p[0]); //close read end of out child
         close(fdp2c[1]); //close write end end in child
-        wp->pid = getpid();
         // do rest of the shenanigans here
         
 
@@ -85,6 +83,7 @@ WATCHER *bitstamp_watcher_start(WATCHER_TYPE *type, char *args[]) {
         fcntl(fdc2p[0], F_SETFL, fd_flags | O_ASYNC | O_NONBLOCK);
         fcntl(fdc2p[0], F_SETOWN, getpid());
         fcntl(fdc2p[0], F_SETSIG, SIGIO);
+        wp->pid = msPid;
         wp->fdIn = fdp2c[1];
         wp->fdOut = fdc2p[0];
 
@@ -111,8 +110,9 @@ WATCHER *bitstamp_watcher_start(WATCHER_TYPE *type, char *args[]) {
 int bitstamp_watcher_stop(WATCHER *wp) {
     // TO BE IMPLEMENTED
     removeWatcher(wp);
-    // printf("bitstamp watcher stop\n");
-    abort();
+    printf("bitstamp watcher stop\n");
+    return 1;
+    // abort();
 }
 
 int bitstamp_watcher_send(WATCHER *wp, void *arg) {
@@ -183,6 +183,8 @@ int bitstamp_watcher_recv(WATCHER *wp, char *txt) {
 
         // int num;
         char buf1[500];
+        for(int i = 0; i < 500; i++)
+            buf1[i] = 0;
         fread(buf1, sizeof(char), 500, tempFp);
         // printf("\nsize %d, channel: %s\n", num,  buf1);
 
@@ -282,6 +284,5 @@ int bitstamp_watcher_recv(WATCHER *wp, char *txt) {
 int bitstamp_watcher_trace(WATCHER *wp, int enable) {
     wp->tracing = enable;
     // TO BE IMPLEMENTED
-    printf("bitstamp watcher trace\n");
     abort();
 }

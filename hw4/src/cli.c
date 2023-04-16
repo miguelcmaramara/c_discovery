@@ -79,48 +79,6 @@ WATCHER *cli_watcher_start(WATCHER_TYPE *type, char *args[]) {
     cwatcher->tracing = 0;
     cwatcher->args = NULL;
 
-    /*
-    // test code for concurency
-    pid_t msPid = fork();
-    if(msPid != 0){
-        // create cwatcher ds
-        cwatcher->fileIn = stdin;
-        cwatcher->fileOut = stdout;
-
-
-        // cleanupcrew fork
-        pid_t ccPid = fork();
-        if(ccPid != 0){
-            printf("pid: %d, cleanup crew employed for: pid %d\n", getpid(), ccPid);
-            printWatchers();
-            // wait for child to finish
-            waitpid(ccPid, NULL, WUNTRACED);
-
-            // cleanup
-            cleanWatcher(cwatcher);
-            // see status afterwards
-            printf("pid: %d, inner finished\n", getpid());
-            printWatchers();
-
-            // abort itself
-            exit(0);
-        } 
-
-        if( ccPid == 0){
-            // do rest of the shenanigans here
-            cwatcher->pid = -1;
-            printf("pid: %d\n", cwatcher->pid);
-            printf("truepid: %d\n", ccPid);
-            for(long i = 0; i <= 3000000000; i++){
-                if(i % 100000000 == 0)
-                    printf("pid: %d, i: %ld, ccPid\n", getpid(), i);
-
-            }
-            exit(1);
-            
-        }
-    }
-    */
     return cwatcher;
 }
 
@@ -156,7 +114,6 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
 
     // handle each case
     if(compareStrings(txt, USR_CMD_START)){
-        printf("  arg matches USR_CMD_START\n");
         for(WATCHER_TYPE *wtp = watcher_types; *(long *)wtp != 0; wtp++){
             // printf("  text: %s\n", txt);
             if(compareStrings(txt + 6, wtp->name)){
@@ -181,7 +138,6 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
         }
         
     } else if(compareStrings(txt, USR_CMD_STOP)){
-        printf("  arg matches USR_CMD_STOP\n");
 
         WATCHER *wp_stop = getWatcherByWid(atoi(txt + 4));
 
@@ -192,9 +148,8 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
         }
 
     } else if(compareStrings(txt, USR_CMD_SHOW)){
-        printf("  arg matches USR_CMD_SHOW\n");
 
-        printf("  relevant args: |%s|\n", txt + 5);
+        // printf("  relevant args: |%s|\n", txt + 5);
 
         struct store_value *svOut = store_get(txt + 5);
 
@@ -213,7 +168,6 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
 
     } else if(compareStrings(txt, USR_CMD_TRACE)){
         // Handle a trace
-        printf("  arg matches USR_CMD_TRACE\n");
         WATCHER *wp_trace = getWatcherByWid(atoi(txt + 5));
 
         if(wp_trace == NULL)
@@ -224,7 +178,6 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
 
     } else if(compareStrings(txt, USR_CMD_UNTRACE)){
         // Handle an untrace
-        printf("  arg matches USR_CMD_UNTRACE\n");
         WATCHER *wp_trace = getWatcherByWid(atoi(txt + 7));
 
         if(wp_trace == NULL)
@@ -233,12 +186,12 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
             wp_trace->tracing = 0;
         }
     } else if(compareStrings(txt, USR_CMD_QUIT)){
-        printf("  arg matches USR_CMD_QUIT\n");
 
         free(txt);
-        wp->typ->stop(wp);
+        removeAllWatchers();
+        exit(1);
+        // wp->typ->stop(wp);
     } else if(compareStrings(txt, USR_CMD_WATCHERS)){
-        // printf("  arg matches USR_CMD_WATCHERS\n");
         char* watchers_string_temp = NULL;
         // printWatchers();
         free(watchers_string_temp);
