@@ -47,6 +47,8 @@ const int USR_CMD_NUM = 7;
  * Helper functions
  */
 int compareStrings(char *str1, char *str2){
+    if(!str1 || !str2) // null string
+        return 0;
     // compares that string 2 is the same as the first characters of string1
     char *s1, *s2;
     for(s1 = str1, s2 = str2; *s1 && *s2; s1++, s2++)
@@ -55,8 +57,6 @@ int compareStrings(char *str1, char *str2){
     if(!*s1 && *s2) // string 1 can't continue, string 2 can
         return 0; 
     return 1; //subset
-    // if(*s1 && !*s2) // string 1 can continue, string 2 cannot
-    // return 0; 
 }
 
 int lenString(char *str){
@@ -73,10 +73,11 @@ WATCHER *cli_watcher_start(WATCHER_TYPE *type, char *args[]) {
     cwatcher->type = CLI_WATCHER_TYPE;
     cwatcher->typ = &watcher_types[CLI_WATCHER_TYPE];
     cwatcher->pid = -1;
-    cwatcher->fileIn = stdin;
-    cwatcher->fileOut = stdout;
+    cwatcher->fdIn = STDIN_FILENO;//stdin;
+    cwatcher->fdOut = STDOUT_FILENO;//stdout;
     cwatcher->serNum = 0;
     cwatcher->tracing = 0;
+    cwatcher->args = NULL;
 
     /*
     // test code for concurency
@@ -124,62 +125,104 @@ WATCHER *cli_watcher_start(WATCHER_TYPE *type, char *args[]) {
 }
 
 int cli_watcher_stop(WATCHER *wp) {
-    if(wp->pid != -1)
-        removeWatcher(wp);
-    else
-        cleanWatcher(wp);
-    return 0;
+    // removeAllWatchers();
+    cli_watcher_send(wp, "??? - to quit please type 'quit'\n");
+    // if(wp->pid != -1)
+        // removeWatcher(wp);
+    // else
+        // cleanWatcher(wp);
+    // exit(1);
+    return 1;
 }
 
 int cli_watcher_send(WATCHER *wp, void *arg) {
-    fprintf(wp->fileOut, "%s", (char *)arg);
-    fflush(wp ->fileOut);
-    return 0;
+    char *temp;
+    int num = asprintf(&temp, "%s", (char *) arg);
+    write(wp->fdOut, temp, num);
+    // fprintf(wp->fileOut, "%s", (char *)arg);
+    free(temp);
+    // fflush(wp ->fileOut);
+    return 1;
 
     // abort();
 }
 
 int cli_watcher_recv(WATCHER *wp, char *txt) {
+    // TODO: implement a "wrong message + error message system"
     wp->serNum++;
     if(wp->tracing){
         printTrace(wp, txt);
     }
 
     // handle each case
-    if(compareStrings(txt, USR_CMD_START))
+    if(compareStrings(txt, USR_CMD_START)){
         printf("  arg matches USR_CMD_START\n");
-        for(struct watcher_type *wtp = watcher_types; *wtp; wtp++){
-            if(compareStrings(txt + 5, wtp->name)){
+        for(WATCHER_TYPE *wtp = watcher_types; *(long *)wtp != 0; wtp++){
+            // printf("  text: %s\n", txt);
+            if(compareStrings(txt + 6, wtp->name)){
 
                 int sz = 0;
-                char *args[] = malloc(sizeof(char*));
-                char *tok = strtok(txt, " ")
+                char **args = malloc(sizeof(char*));
+                char *tok = strtok(txt, " ");
                 while( tok!= 0){
-                    args = realloc(args, (++sz) * sizeof(char*))
+                    args = realloc(args, (++sz) * sizeof(char*));
                     args[sz - 1] = tok;
-                    tok = strtok(txt, " ");
+                    tok = strtok(NULL, " ");
                 }
+                args = realloc(args, (++sz) * sizeof(char*));
+                args[sz - 1] = NULL;
+
                 
                 wtp->start(wtp, args);
-                free(*args);
+                free(args);
+                break;
             }
 
         }
         
-    else if(compareStrings(txt, USR_CMD_STOP))
+    } else if(compareStrings(txt, USR_CMD_STOP)){
         printf("  arg matches USR_CMD_STOP\n");
-    else if(compareStrings(txt, USR_CMD_TRACE)){
+
+        WATCHER *wp_stop = getWatcherByWid(atoi(txt + 4));
+
+        if(wp_stop == NULL)
+            cli_watcher_send(wp, "??? - Cannot stop Nonexistent watcher\n"); //error
+        else{
+            wp_stop->typ->stop(wp_stop);
+        }
+
+    } else if(compareStrings(txt, USR_CMD_SHOW)){
+        printf("  arg matches USR_CMD_SHOW\n");
+
+        printf("  relevant args: |%s|\n", txt + 5);
+
+        struct store_value *svOut = store_get(txt + 5);
+
+        if(svOut == NULL){
+            cli_watcher_send(wp, "??? - Key not found\n");
+        } else {
+            char* buf;
+            asprintf(&buf, "%s\t%lf\n", txt + 5, svOut->content.double_value);
+            cli_watcher_send(wp, buf);
+            // wp->typ->send(buf)
+            free(buf);
+            free(svOut);
+        }
+
+
+
+    } else if(compareStrings(txt, USR_CMD_TRACE)){
         // Handle a trace
         printf("  arg matches USR_CMD_TRACE\n");
         WATCHER *wp_trace = getWatcherByWid(atoi(txt + 5));
 
         if(wp_trace == NULL)
-            cli_watcher_send(wp, "???\n"); //error
+            cli_watcher_send(wp, "??? - Cannot trace Nonexistent watcher\n"); //error
         else{
             wp_trace->tracing = 1;
         }
 
-    } else if(compareStrings(txt, USR_CMD_UNTRACE))
+    } else if(compareStrings(txt, USR_CMD_UNTRACE)){
         // Handle an untrace
         printf("  arg matches USR_CMD_UNTRACE\n");
         WATCHER *wp_trace = getWatcherByWid(atoi(txt + 7));
@@ -189,27 +232,31 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
         else{
             wp_trace->tracing = 0;
         }
-    else if(compareStrings(txt, USR_CMD_QUIT))
+    } else if(compareStrings(txt, USR_CMD_QUIT)){
         printf("  arg matches USR_CMD_QUIT\n");
-    else if(compareStrings(txt, USR_CMD_WATCHERS)){
+
+        free(txt);
+        wp->typ->stop(wp);
+    } else if(compareStrings(txt, USR_CMD_WATCHERS)){
         // printf("  arg matches USR_CMD_WATCHERS\n");
-        char* temp;
+        char* watchers_string_temp = NULL;
         // printWatchers();
-        watchersString(&temp);
-        wp->typ->send(wp, temp);
-        free(temp);
+        free(watchers_string_temp);
+        watchersString(&watchers_string_temp);
+        wp->typ->send(wp, watchers_string_temp);
+        free(watchers_string_temp);
         // printWatchers();
         
     }else {
         cli_watcher_send(wp, "???\n");
     }
-    return 0;
+    return 1;
 }
 
 
 int cli_watcher_trace(WATCHER *wp, int enable) {
     wp->tracing = enable;
-    return 0;
+    return 1;
     // abort();
 }
 

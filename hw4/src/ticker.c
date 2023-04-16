@@ -12,7 +12,7 @@
 #include "ticker.h"
 #include "cli.h"
 
-#define INPUT_BUFFER_SIZE 5
+#define INPUT_BUFFER_SIZE 1024
 /*
  * GLobal Variables
  */
@@ -22,10 +22,16 @@ sigset_t ioMask;
 struct sigaction sigintAction;
 struct sigaction sigchldAction;
 struct sigaction sigIOAction;
+struct sigaction sigPipeAction;
+struct sigaction sigPIAction;
 struct sigaction sigkillTerm;
 
 // watcher vars
 WATCHER *cli_watcher;
+int shouldReprint = 1;
+
+// current parent id
+pid_t parentId;
 
 /*
  *
@@ -35,7 +41,8 @@ WATCHER *cli_watcher;
 
 // sigint handler
 void sigintHandler(int sig){
-    printf("Keyboard interupt detected: shutting down.%d\n", sig);
+    printf("Keyboard interupt detected: Terminating Program down.%d\n", sig);
+    removeAllWatchers();
     // todo: create teardown process
     // todo: remove watchers from memory
     // todo: stop processes
@@ -46,15 +53,18 @@ void sigintHandler(int sig){
 // sigchld handler
 void sigchldHandler(int sig){
     printf("\nChild process was stopped with signal %d\n", sig);
+
+    // wait
     
     // todo: remove the process from the datastore
     
-    exit(0);
+    // exit(0);
 }
 
 // sigKillTerm handler
 void sigKillTermHandler(int sig){
     printf("\nProcess killed(%d) / terminted with signal %d: terminating program.\n", SIGKILL, sig);
+    removeAllWatchers();
     exit(0);
 }
 
@@ -62,58 +72,73 @@ void sigKillTermHandler(int sig){
 void sigIOHandler(int sig, siginfo_t *info, void*context){
 
     sigprocmask(SIG_BLOCK, &ioMask, NULL);
-    char buff[INPUT_BUFFER_SIZE];
     // printf("\nCAUGHT: input put found with signal %d at file descriptor %d\n", sig, info->si_fd);
-
-
-    // handle gpio input output
-    // if(info->si_fd == STDIN_FILENO)
-        
-        
-    
-    // sleep(5);
     
     // fill message with 
-    int numRead = read(info->si_fd, buff, INPUT_BUFFER_SIZE);
-    int totalRead = 0;
-    char *message = malloc(1);
+    WATCHER *wp = watcherLstHead.next;
 
-    while(numRead >= 0){
-        // remove endline
-        if(buff[numRead - 1] == '\n'){
-            buff[numRead - 1] = 0;
-            numRead--;
+    while(wp != NULL){
+
+        char buff[INPUT_BUFFER_SIZE];
+        // int numRead = read(info->si_fd, buff, INPUT_BUFFER_SIZE);
+        int numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+        int totalRead = 0;
+        char *message = malloc(1);
+
+        if(numRead == 0){
+            wp = wp->next;
+            continue;
         }
-        // process buffer
-        // printf("    read from file: %s, size: %d\n", buff, numRead);
-        message = realloc(message, totalRead + numRead);
-        memcpy(message + totalRead, buff, numRead);
-        // printf("    total message: %s\n", message);
-        totalRead += numRead;
+
+        while(numRead >= 0){
+            // remove endline
+            if(buff[numRead - 1] == '\n'){
+                buff[numRead - 1] = 0;
+                numRead--;
+            }
+            // process buffer
+            // printf("    read from file: %s, size: %d\n", buff, numRead);
+            message = realloc(message, totalRead + numRead);
+            memcpy(message + totalRead, buff, numRead);
+            // printf("    total message: %s\n", message);
+            totalRead += numRead;
 
 
 
-        // clean buffer
-        for(int i = 0; i < numRead; i++)
-            buff[i] = 0;
-        // fill buffer
-        numRead = read(info->si_fd, buff, INPUT_BUFFER_SIZE);
-    } 
+            // clean buffer
+            for(int i = 0; i < numRead; i++)
+                buff[i] = 0;
+            // fill buffer
+            // numRead = read(info->si_fd, buff, INPUT_BUFFER_SIZE);
+            numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+        } 
 
-    // add endline
-    if(message[totalRead - 1] != 0){
-        message = realloc(message, totalRead + 1);
-        message[totalRead - 1] = 0;
+        // add endline
+        if(message[totalRead - 1] != 0){
+            message = realloc(message, totalRead + 1);
+            message[totalRead] = 0;
+        }
+
+
+        if(totalRead > 0){
+
+            if(wp->typ == &watcher_types[CLI_WATCHER_TYPE])
+                shouldReprint = 1;
+            wp->typ->recv(wp, message);
+            // watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
+        }
+        /*
+        if(info->si_fd == STDIN_FILENO){
+            watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
+            // cli_watcher_send(WATCHER *wp, void *msg)
+        } else {
+            printf("MESSAGE RECIEVED IN HANDLER %s\n", message);
+        }
+        */
+        free(message);
+        wp = wp->next;
     }
 
-
-    if(info->si_fd == STDIN_FILENO){
-        watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
-        // cli_watcher_send(WATCHER *wp, void *msg)
-    }
-    free(message);
-
-    // printf("    read from file: %s\n", buf);
     sigprocmask(SIG_UNBLOCK, &ioMask, NULL);
     // exit(0);
 }
@@ -134,16 +159,17 @@ int sigMask(sigset_t *set){
     sigdelset(set, SIGKILL);
     sigdelset(set, SIGTERM);
     sigdelset(set, SIGIO);
+    sigdelset(set, SIGPIPE);
     // sigdelset(set, SIGIO); //we don't want program to continue with SIGIO
     
-    return 0;
+    return 1;
 }
 
 int setIOMask(){
     sigemptyset(&ioMask);
     sigaddset(&ioMask, SIGIO);
     
-    return 0;
+    return 1;
 }
 
 
@@ -160,6 +186,7 @@ int initTicker(){
     // setup masks
     sigMask(&setMask);
 
+    parentId = getpid();
 
 
     
@@ -168,7 +195,7 @@ int initTicker(){
     sigintAction.sa_handler = sigintHandler;
     if(sigaction(SIGINT, &sigintAction, NULL) == -1){
         fprintf(stderr, "FAILED TO ATTACH SIGINT ACTION");
-        return 0;
+        return 1;
     }
 
     // sigchld Handler
@@ -176,14 +203,14 @@ int initTicker(){
     sigchldAction.sa_handler = sigchldHandler;
     if(sigaction(SIGCHLD, &sigchldAction, NULL) == -1){
         fprintf(stderr, "FAILED TO ATTACH SIGCHLD HANDLER");
-        return 0;
+        return 1;
     }
 
     sigIOAction.sa_flags = SIGIO;
     sigIOAction.sa_sigaction = sigIOHandler;
     if(sigaction(SIGIO, &sigIOAction, NULL) == -1){
         fprintf(stderr, "FAILED TO ATTACH SIGIO HANDLER");
-        return 0;
+        return 1;
     }
 
     // sigkillTerm Handler
@@ -196,7 +223,7 @@ int initTicker(){
     // if(sigaction(SIGTERM, &sigkillTerm,NULL) == -1){
         // fprintf(stderr, "FAILED TO ATTACH SIGTERM HANDLER");
         // return 0;
-    // }
+    // }
     
     // set recieving process for gpio signals
     fcntl(STDIN_FILENO, F_SETOWN, getpid());
@@ -222,7 +249,7 @@ int initCliWatcher(){
    
     // cleanupCrew()
 
-    return 0;
+    return 1;
 }
 
 
@@ -272,12 +299,18 @@ int ticker(void) {
 
 
     while(1){
-        watcher_types[CLI_WATCHER_TYPE].send(cli_watcher, "ticker> ");
+        if(shouldReprint == 1){
+            watcher_types[CLI_WATCHER_TYPE].send(cli_watcher, "ticker> ");
+            shouldReprint = 0;
+        }
         // printf("ticker> ");
         fflush(stdout);
         sigsuspend(&setMask);
+        if(getpid() != parentId){
+            break;
+        }
     }
 
-    abort();
-    return 0;
+    // abort();
+    return 1;
 }
