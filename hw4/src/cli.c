@@ -189,7 +189,7 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
 
         free(txt);
         removeAllWatchers();
-        exit(1);
+        exit(EXIT_SUCCESS);
         // wp->typ->stop(wp);
     } else if(compareStrings(txt, USR_CMD_WATCHERS)){
         char* watchers_string_temp = NULL;

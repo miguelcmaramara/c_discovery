@@ -47,7 +47,7 @@ void sigintHandler(int sig){
     // todo: remove watchers from memory
     // todo: stop processes
     //teardown();
-    exit(0);
+    exit(EXIT_SUCCESS);
 }
 
 // sigchld handler
@@ -79,11 +79,10 @@ void sigKillTermHandler(int sig){
     exit(0);
 }
 
-// sigint handler
-void sigIOHandler(int sig, siginfo_t *info, void*context){
-
+int parseInput(){
     sigprocmask(SIG_BLOCK, &ioMask, NULL);
     // printf("\nCAUGHT: input put found with signal %d at file descriptor %d\n", sig, info->si_fd);
+    // printf("SIGNAL INPUT: ");
     
     // fill message with 
     WATCHER *wp = watcherLstHead.next;
@@ -92,7 +91,14 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
 
         char buff[INPUT_BUFFER_SIZE];
         // int numRead = read(info->si_fd, buff, INPUT_BUFFER_SIZE);
-        int numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+        // int numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+        int numRead;
+        if(wp->typ == &watcher_types[CLI_WATCHER_TYPE])
+            numRead = read(wp->fdIn, buff, INPUT_BUFFER_SIZE);
+        else
+            numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+
+        // int numRead = read(STDIN_FILENO, buff, INPUT_BUFFER_SIZE);
         int totalRead = 0;
         // char *message = malloc(1);
         char *message = NULL;
@@ -102,7 +108,8 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
             continue;
         }
 
-        while(numRead >= 0){
+        // printf("HERE %d %s\n", numRead, message);
+        while(numRead > 0){
             // remove endline
             if(buff[numRead - 1] == '\n'){
                 buff[numRead - 1] = 0;
@@ -112,6 +119,7 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
             message = realloc(message, totalRead + numRead);
             memcpy(message + totalRead, buff, numRead);
             totalRead += numRead;
+            // printf("INSIDE: %s %d %d\n", message, totalRead, numRead);
 
 
 
@@ -120,21 +128,32 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
                 buff[i] = 0;
             // fill buffer
             // numRead = read(info->si_fd, buff, INPUT_BUFFER_SIZE);
-            numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+            // numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+            if(wp->typ == &watcher_types[CLI_WATCHER_TYPE])
+                numRead = read(wp->fdIn, buff, INPUT_BUFFER_SIZE);
+            else
+                numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
+            // printf("AfTER: %s %d %d\n", message, totalRead, numRead);
         } 
+        // printf("INSIDE2: %s %d\n", message, totalRead);
 
         if(totalRead > 0){
+            // printf("2: %s\n", message);
             // add endline
             if(message[totalRead - 1] != 0){
                 message = realloc(message, totalRead + 1);
                 message[totalRead] = 0;
             }
 
-            if(wp->typ == &watcher_types[CLI_WATCHER_TYPE])
+            if(wp->typ == &watcher_types[CLI_WATCHER_TYPE]){
+                // printf("2.25: %s\n", message);
                 shouldReprint = 1;
+            }
             wp->typ->recv(wp, message);
+            // printf("2.5: %s\n", message);
             // watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
         }
+        // printf("INSIDE3: %s %d\n", message, totalRead);
         /*
         if(info->si_fd == STDIN_FILENO){
             watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
@@ -142,12 +161,20 @@ void sigIOHandler(int sig, siginfo_t *info, void*context){
         } else {
         }
         */
+        // printf("3: %s\n", message);
         if(message != NULL)
             free(message);
         wp = wp->next;
     }
 
     sigprocmask(SIG_UNBLOCK, &ioMask, NULL);
+    return 1;
+}
+
+// sigint handler
+void sigIOHandler(int sig, siginfo_t *info, void*context){
+    parseInput();
+
     // exit(0);
 }
 
@@ -280,15 +307,18 @@ int ticker(void) {
 
 
     while(1){
+        // parseInput();
         if(shouldReprint == 1){
             watcher_types[CLI_WATCHER_TYPE].send(cli_watcher, "ticker> ");
             shouldReprint = 0;
         }
         fflush(stdout);
+        parseInput();
         sigsuspend(&setMask);
         if(getpid() != parentId){
             break;
         }
+        // break;
     }
 
     // abort();
