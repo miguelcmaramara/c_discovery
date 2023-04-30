@@ -82,7 +82,6 @@ void sigKillTermHandler(int sig){
 int parseInput(){
     sigprocmask(SIG_BLOCK, &ioMask, NULL);
     // printf("\nCAUGHT: input put found with signal %d at file descriptor %d\n", sig, info->si_fd);
-    // printf("SIGNAL INPUT: ");
     
     // fill message with 
     WATCHER *wp = watcherLstHead.next;
@@ -108,7 +107,6 @@ int parseInput(){
             continue;
         }
 
-        // printf("HERE %d %s\n", numRead, message);
         while(numRead > 0){
             // remove endline
             if(buff[numRead - 1] == '\n'){
@@ -119,7 +117,6 @@ int parseInput(){
             message = realloc(message, totalRead + numRead);
             memcpy(message + totalRead, buff, numRead);
             totalRead += numRead;
-            // printf("INSIDE: %s %d %d\n", message, totalRead, numRead);
 
 
 
@@ -133,12 +130,9 @@ int parseInput(){
                 numRead = read(wp->fdIn, buff, INPUT_BUFFER_SIZE);
             else
                 numRead = read(wp->fdOut, buff, INPUT_BUFFER_SIZE);
-            // printf("AfTER: %s %d %d\n", message, totalRead, numRead);
         } 
-        // printf("INSIDE2: %s %d\n", message, totalRead);
 
         if(totalRead > 0){
-            // printf("2: %s\n", message);
             // add endline
             if(message[totalRead - 1] != 0){
                 message = realloc(message, totalRead + 1);
@@ -146,14 +140,11 @@ int parseInput(){
             }
 
             if(wp->typ == &watcher_types[CLI_WATCHER_TYPE]){
-                // printf("2.25: %s\n", message);
                 shouldReprint = 1;
             }
             wp->typ->recv(wp, message);
-            // printf("2.5: %s\n", message);
             // watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
         }
-        // printf("INSIDE3: %s %d\n", message, totalRead);
         /*
         if(info->si_fd == STDIN_FILENO){
             watcher_types[CLI_WATCHER_TYPE].recv(cli_watcher, message);
@@ -161,7 +152,6 @@ int parseInput(){
         } else {
         }
         */
-        // printf("3: %s\n", message);
         if(message != NULL)
             free(message);
         wp = wp->next;

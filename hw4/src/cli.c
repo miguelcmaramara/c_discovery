@@ -84,7 +84,7 @@ WATCHER *cli_watcher_start(WATCHER_TYPE *type, char *args[]) {
 
 int cli_watcher_stop(WATCHER *wp) {
     // removeAllWatchers();
-    cli_watcher_send(wp, "??? - to quit please type 'quit'\n");
+    cli_watcher_send(wp, "???\n");
     // if(wp->pid != -1)
         // removeWatcher(wp);
     // else
@@ -142,7 +142,7 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
         WATCHER *wp_stop = getWatcherByWid(atoi(txt + 4));
 
         if(wp_stop == NULL)
-            cli_watcher_send(wp, "??? - Cannot stop Nonexistent watcher\n"); //error
+            cli_watcher_send(wp, "???\n"); //error
         else{
             wp_stop->typ->stop(wp_stop);
         }
@@ -154,7 +154,7 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
         struct store_value *svOut = store_get(txt + 5);
 
         if(svOut == NULL){
-            cli_watcher_send(wp, "??? - Key not found\n");
+            cli_watcher_send(wp, "???\n");
         } else {
             char* buf;
             asprintf(&buf, "%s\t%lf\n", txt + 5, svOut->content.double_value);
@@ -171,7 +171,7 @@ int cli_watcher_recv(WATCHER *wp, char *txt) {
         WATCHER *wp_trace = getWatcherByWid(atoi(txt + 5));
 
         if(wp_trace == NULL)
-            cli_watcher_send(wp, "??? - Cannot trace Nonexistent watcher\n"); //error
+            cli_watcher_send(wp, "???\n"); //error
         else{
             wp_trace->tracing = 1;
         }
