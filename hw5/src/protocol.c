@@ -110,6 +110,7 @@ int proto_send_packet(int fd, JEUX_PACKET_HEADER *hdr, void *data){
  */
 int proto_recv_packet(int fd, JEUX_PACKET_HEADER *hdr, void **payloadp){
     hdr->size = 0;
+    *payloadp = NULL;
 
     int hsz = read(fd, hdr, sizeof(JEUX_PACKET_HEADER));
     if( hsz != sizeof(JEUX_PACKET_HEADER)){
@@ -123,10 +124,11 @@ int proto_recv_packet(int fd, JEUX_PACKET_HEADER *hdr, void **payloadp){
             return -1;
         }
     }
-    info("recieved %d byte header from %d: typ %d, role: %d, id: %d",
-            hsz, fd, hdr->type, hdr->role, hdr->id);
+    info("recieved %d byte header from %d: typ %d, role: %d, id: %d, sz: %d",
+            hsz, fd, hdr->type, hdr->role, hdr->id, ntohs(hdr->size) );
 
-    if(hdr->size > 0){
+    if(ntohs(hdr->size) > 0){
+        // error("I AM IN HERE");
         *payloadp = malloc(ntohs(hdr->size));
         for(int i = 0; i < ntohs(hdr->size); i++){
             *((char*)*payloadp + i) = 0;
@@ -136,6 +138,8 @@ int proto_recv_packet(int fd, JEUX_PACKET_HEADER *hdr, void **payloadp){
             case JEUX_LOGIN_PKT:
             case JEUX_INVITE_PKT:
             case JEUX_MOVE_PKT:
+                debug("STRING BASED: ALLOCATING MORE SPACE (%d -> %d)",
+                        ntohs(hdr->size), ntohs(hdr->size) + 1);
                 *payloadp = realloc(*payloadp, ntohs(hdr->size) + 1);
                 ((char *)*payloadp)[ntohs(hdr->size)] = 0;
         }

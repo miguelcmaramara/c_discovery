@@ -27,8 +27,6 @@ struct invWrapper{
 };
 
 void cleanup(CLIENT *cl, struct invWrapper *head){
-    close(client_get_fd(cl));
-    creg_unregister(client_registry, cl);
     struct invWrapper* prev;
     struct invWrapper* curr = head;
     while(curr != NULL){
@@ -38,6 +36,8 @@ void cleanup(CLIENT *cl, struct invWrapper *head){
         curr = curr->next;
         free(prev);
     }
+    close(client_get_fd(cl));
+    creg_unregister(client_registry, cl);
     // exit(shutCode);
 }
 
@@ -168,7 +168,8 @@ void *jeux_client_service(void *arg){
                 info("LOGIN PACKET RECIEVED FROM CLIENT %d", fd);
                 debug("   HERER:%p",client_get_player(cl));
                 if(client_get_player(cl) == NULL){
-                    PLAYER * pl = player_create(dPtr);
+                    // PLAYER * pl = player_create(dPtr);
+                    PLAYER * pl = preg_register(player_registry, dPtr);
                     client_login(cl, pl);
                     player_unref(pl, "player logged into client No more need.");
 
@@ -190,10 +191,11 @@ void *jeux_client_service(void *arg){
                 char buf[1000];
                 memset(buf, 0, 1000);
                 PLAYER ** players = creg_all_players(client_registry);
+                PLAYER ** temp = players;
 
                 while(*(players)){
                     // printf("HERE\n");
-                    error("%p\n", *players);
+                    // error("%p\n", *players);
                     strcat(buf, player_get_name(*players));
                     // printf("    %p", *players);
                     strcat(buf, "\t");
@@ -205,6 +207,7 @@ void *jeux_client_service(void *arg){
                     player_unref(*players, "player used for USERS, reference no longer needed");
                     players++;
                 }
+                free(temp); // malloc'd list
                 // break;
 
                 // prep packet
@@ -349,7 +352,10 @@ void *jeux_client_service(void *arg){
                 }
                 break;
         }
-        // free(dPtr);
+        if(dPtr != NULL){
+            info("freeing unused dPtr");
+            free(dPtr);
+        }
     }
     return NULL;
 }

@@ -178,6 +178,8 @@ int creg_unregister(CLIENT_REGISTRY *cr, CLIENT *client){
             // cr->clients[4],
             // cr->clients[5]);
     pthread_mutex_unlock(&cr->cr_lock);
+    // unref players
+    // client_unref(client, "Unregistered from client registry");
     client_unref(client, "Unregistered from client registry");
     return 0;
 }
@@ -189,7 +191,7 @@ int creg_unregister(CLIENT_REGISTRY *cr, CLIENT *client){
  *
  * @param cr  The registry in which the lookup is to be performed.
  * @param user  The username that is to be looked up.
- * @return the CLIENT currently registered under the specified
+ * @return the CLIENT currently registered under )the specified
  * username, if there is one, otherwise NULL.
  */
 CLIENT *creg_lookup(CLIENT_REGISTRY *cr, char *user){
@@ -229,11 +231,11 @@ CLIENT *creg_lookup(CLIENT_REGISTRY *cr, char *user){
 PLAYER **creg_all_players(CLIENT_REGISTRY *cr){
     info("creg_all_players called for cr ptr %p", cr);
     pthread_mutex_lock(&cr->cr_lock);
-    PLAYER **res = malloc(cr->numClients * sizeof(PLAYER *) + 1);
+    PLAYER **res = calloc(1, cr->numClients * sizeof(PLAYER *) + 1);
     // initialize 0
-    for(int i = 0; i <= cr->numClients; i++){
-        res[i] = NULL;
-    }
+    // for(int i = 0; i <= cr->numClients; i++){
+        // res[i] = NULL;
+    // }
     int len = 0;
     info("numClients: %d", cr->numClients);
     for(int i = 0; i < cr->numClients; i++){
